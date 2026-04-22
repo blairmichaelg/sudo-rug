@@ -50,9 +50,11 @@ class SudoRugApp(App):
     def compose(self) -> ComposeResult:
         yield GameScreen()
 
-    async def on_mount(self) -> None:
-        """Start the boot sequence and clock."""
-        # Run boot sequence
+    def on_mount(self) -> None:
+        """Start the boot sequence and clock after render."""
+        self.call_after_refresh(self._start_boot_sequence)
+
+    def _start_boot_sequence(self):
         asyncio.create_task(self._boot_sequence())
 
     async def _boot_sequence(self) -> None:
