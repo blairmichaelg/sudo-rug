@@ -1,0 +1,54 @@
+"""Heat system — accumulation, decay, and risk escalation."""
+
+from __future__ import annotations
+
+from sudo_rug.core.enums import ActionType
+from sudo_rug.core.state import GameState
+
+
+# Heat costs per action type
+HEAT_COSTS: dict[ActionType, float] = {
+    ActionType.DEPLOY_TOKEN: 5.0,
+    ActionType.TRADE: 1.0,
+    ActionType.RUN_BOTS: 3.0,
+    ActionType.PULL_LIQUIDITY: 30.0,
+    ActionType.CREATE_POOL: 2.0,
+}
+
+
+def add_heat(state: GameState, action: ActionType, multiplier: float = 1.0) -> float:
+    """Add heat for an action. Returns actual heat added."""
+    base_cost = HEAT_COSTS.get(action, 0.0)
+    # OpSec reduces heat gain: effective = base * (1.0 - opsec * 0.5)
+    opsec_factor = 1.0 - (state.opsec * 0.5)
+    actual = base_cost * opsec_factor * multiplier
+    state.heat.level += actual
+    state.heat.history.append((state.clock_block, state.heat.level))
+    return actual
+
+
+def decay_heat(state: GameState) -> float:
+    """Decay heat by one block's worth. Returns amount decayed."""
+    decay = state.config.heat_decay_per_block
+    actual_decay = min(decay, state.heat.level)
+    state.heat.level = max(0.0, state.heat.level - decay)
+    return actual_decay
+
+
+def get_heat_bar(level: float, width: int = 20) -> str:
+    """Render a visual heat bar."""
+    clamped = max(0.0, min(100.0, level))
+    filled = int((clamped / 100.0) * width)
+    empty = width - filled
+
+    if clamped >= 75:
+        color = "red"
+    elif clamped >= 50:
+        color = "yellow"
+    elif clamped >= 25:
+        color = "dark_orange"
+    else:
+        color = "green"
+
+    bar = "█" * filled + "░" * empty
+    return f"[{color}]{bar}[/] {clamped:.1f}/100"
