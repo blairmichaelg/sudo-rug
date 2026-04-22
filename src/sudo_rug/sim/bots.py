@@ -92,12 +92,15 @@ def tick_bots(state: GameState) -> list[str]:
             pool = random.choice(active_pools)
             # Sell a random 5-20% of the token reserve
             sell_amount = pool.reserve_token * random.uniform(0.05, 0.20)
-            from sudo_rug.sim.market import execute_sell
-            result = execute_sell(state, pool.market_key, sell_amount, actor="bot")
-            if not isinstance(result, str):
-                messages.append(
-                    f"  [red]sniper[/]: sold {sell_amount:.2f} on {pool.market_key} "
-                    f"for ${result.amount_out:.2f} (price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f})"
-                )
+            price_before = pool.price
+            base_out = sell_amount * pool.price * 0.997
+            pool.reserve_token += sell_amount
+            pool.reserve_base = max(0.01, pool.reserve_base - base_out)
+            price_after = pool.price
+            
+            messages.append(
+                f"  [red]sniper[/]: sold {sell_amount:.2f} on {pool.market_key} "
+                f"for ${base_out:.2f} (price: ${price_before:.6f} [red]▼[/] ${price_after:.6f})"
+            )
 
     return messages

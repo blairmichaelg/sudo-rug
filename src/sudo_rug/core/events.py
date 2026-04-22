@@ -78,11 +78,9 @@ def check_random_events(state: GameState) -> list[str]:
     if not state.tokens and state.wallet.get("USD") == state.config.start_capital:
         return messages
 
-    roll = random.random()
-    
     # MEV Sandwich Attack (1% chance per block if USD > 50): drain 1-5% of USD, small heat spike
     usd = state.wallet.get("USD")
-    if roll < 0.01 and usd > 50.0:
+    if random.random() < 0.01 and usd > 50.0:
         loss = usd * random.uniform(0.01, 0.05)
         state.wallet.debit("USD", loss)
         state.heat.level += 2.0
@@ -90,13 +88,13 @@ def check_random_events(state: GameState) -> list[str]:
     
     # Viral Tweet (0.5% chance per block if any pool is active): Heat +10
     active_pools = [p for p in state.pools.values() if p.reserve_base > 0]
-    if 0.01 <= roll < 0.015 and active_pools:
-        from sudo_rug.sim.heat import add_heat
+    if random.random() < 0.005 and active_pools:
+        # Avoid direct import loop if needed, but here it's fine since it's lazy
         state.heat.level += 10.0
         messages.append("⚠ [bold yellow]An influencer tweeted your ticker. Heat +10.0![/]")
     
     # Lucky Break (0.5% chance): Heat -15
-    if 0.015 <= roll < 0.02:
+    if random.random() < 0.005:
         if state.heat.level > 20:
             state.heat.level = max(0.0, state.heat.level - 15.0)
             messages.append("★ [bold green]An on-chain sleuth's thread was debunked. Heat -15.0[/]")

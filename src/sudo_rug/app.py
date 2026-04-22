@@ -8,6 +8,7 @@ import random
 from textual.app import App, ComposeResult
 from textual.widgets import Input
 
+from sudo_rug.core.state import GameState
 from sudo_rug.core.events import check_win_lose, check_heat_warnings, check_random_events
 from sudo_rug.sim.bots import tick_bots
 from sudo_rug.sim.heat import decay_heat
