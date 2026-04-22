@@ -1,12 +1,8 @@
-import asyncio
 import threading
 import time
 import random
 from rich.console import Console
-from rich.layout import Layout
-from rich.live import Live
 from rich.panel import Panel
-from rich.text import Text
 
 from sudo_rug.core.state import GameState
 from sudo_rug.sim.heat import decay_heat, get_heat_bar
@@ -80,29 +76,6 @@ def build_status_panel(state: GameState) -> Panel:
 
     return Panel("\n".join(lines), title="status", border_style="blue")
 
-def build_log_panel(state: GameState, max_lines: int = 20) -> Panel:
-    lines = []
-    for entry in state.log[-max_lines:]:
-        prefix = f"[dim]#{entry.block}[/]"
-        msg = f"[{entry.style}]{entry.message}[/]" if entry.style else entry.message
-        lines.append(f"{prefix} {msg}")
-    return Panel("\n".join(lines), title="game log")
-
-def build_layout(state: GameState) -> Layout:
-    layout = Layout()
-    layout.split_column(
-        Layout(name="top", ratio=3),
-        Layout(name="bottom", ratio=1),
-    )
-    layout["top"].split_row(
-        Layout(build_log_panel(state), name="log", ratio=2),
-        Layout(build_status_panel(state), name="status", ratio=1),
-    )
-    layout["bottom"].update(
-        Panel("[dim]Type a command below. Press Ctrl+C or type 'quit' to exit.[/]", title="INPUT")
-    )
-    return layout
-
 def _tick(state: GameState):
     """Process a single simulation tick."""
     state.clock_block += 1
@@ -135,110 +108,105 @@ def _tick(state: GameState):
         state.add_log(w, style="bold yellow")
     result = check_win_lose(state)
 
-async def game_clock(state: GameState, live: Live):
-    # Boot sequence messages
-    for msg in BOOT_MESSAGES:
-        state.add_log(msg)
-        live.update(build_layout(state))
-        await asyncio.sleep(0.15)
-    await asyncio.sleep(0.3)
-    state.add_log(SYSTEM_READY)
-    state.add_log("System initialized. Welcome to the dark forest.", style="green")
-    state.add_log(
-        f"Starting capital: ${state.config.start_capital:,.2f}. "
-        f"Target: ${state.config.win_target:,.0f}.",
-    )
-    live.update(build_layout(state))
+def _print_new_logs(state: GameState, console: Console, since: int = 0):
+    """Print any log entries added since `since` index."""
+    new_entries = state.log[since:]
+    for entry in new_entries:
+        prefix = f"[dim]#{entry.block}[/] "
+        if entry.style:
+            console.print(f"{prefix}[{entry.style}]{entry.message}[/]")
+        else:
+            console.print(f"{prefix}{entry.message}")
+    return len(state.log)
 
-    while state.alive and state.running:
-        await asyncio.sleep(state.config.tick_interval)
-        if not state.running or not state.alive:
+def _clock_worker(state: GameState, console: Console, stop_event: threading.Event):
+    """Clock runs in background thread, prints new log entries as they appear."""
+    last_log_count = len(state.log)
+    while not stop_event.is_set() and state.alive and state.running:
+        time.sleep(state.config.tick_interval)
+        if stop_event.is_set():
             break
         _tick(state)
-        live.update(build_layout(state))
-
-def input_loop(state: GameState, live: Live, loop: asyncio.AbstractEventLoop):
-    while state.alive and state.running:
-        try:
-            raw = input("\n> ")
-        except (EOFError, KeyboardInterrupt):
-            state.running = False
-            break
-        if not raw.strip():
-            continue
-            
-        if raw.lower().strip() in ("quit", "q", "exit"):
-            state.running = False
-            break
-            
-        console.print(f"[cyan]> {raw.strip()}[/]")
-        state.add_log(f"> {raw.strip()}", style="cyan")
-        
-        output = execute_command(state, raw.strip())
-        
-        if not output:
-            live.update(build_layout(state))
-            continue
-            
-        if output[0] == "__NEWGAME__":
-            from sudo_rug.content.starter_scenarios import default_config
-            from pathlib import Path
-            fresh = GameState(config=default_config())
-            state.__dict__.update(fresh.__dict__)
-            save_path = Path.home() / ".sudo_rug" / "save.json"
-            if save_path.exists():
-                save_path.unlink()
-            state.add_log("New game started.", style="green")
-        
-        elif output[0].startswith("__LOAD_JSON__"):
-            import json
-            parts = output[0].split("\n", 1)
-            try:
-                data = json.loads(parts[1])
-                new_state = GameState.from_dict(data)
-                
-                # Copy values over to current state to keep reference
-                state.__dict__.update(new_state.__dict__)
-                
-                state.add_log(f"✓ loaded from Block #{state.clock_block}.", style="green")
-                state.add_log(f"  Capital: ${state.wallet.get('USD'):,.2f}")
-                state.add_log(f"  Heat: {state.heat.level:.1f}")
-                state.add_log(f"  OpSec Tier: {state.opsec_tier}")
-            except Exception as e:
-                state.add_log(f"[red]Error parsing save:[/] {e}")
-        
-        else:
-            for line in output:
-                if line.startswith("__WAIT__"):
-                    blocks = int(line.replace("__WAIT__", ""))
-                    state.add_log(f"[dim]Waiting {blocks} blocks...[/]")
-                    for _ in range(blocks):
-                        time.sleep(state.config.tick_interval)
-                        _tick(state)
-                    state.add_log(f"[dim]...{blocks} blocks passed.[/]")
-                elif line == "__NEWGAME__":
-                    pass 
-                else:
-                    state.add_log(line)
-                    
-        live.update(build_layout(state))
-        if not state.alive:
-            break
+        last_log_count = _print_new_logs(state, console, last_log_count)
 
 def run_app(state: GameState):
-    layout = build_layout(state)
-    with Live(layout, console=console, refresh_per_second=4, screen=True) as live:
-        loop = asyncio.new_event_loop()
-        clock_thread = threading.Thread(
-            target=lambda: loop.run_until_complete(game_clock(state, live)),
-            daemon=True
-        )
-        clock_thread.start()
-        input_loop(state, live, loop)
-    
-    if not state.alive and not state.won:
-        console.print("\n[bold red]═══ GAME OVER ═══[/]")
-        console.print("[dim]The chain remembers. You didn't move fast enough.[/]")
-    elif state.won:
+    # Print boot sequence as normal console output
+    for msg in BOOT_MESSAGES:
+        console.print(msg)
+        time.sleep(0.08)
+    console.print(SYSTEM_READY)
+    console.print(f"[green]Starting capital: ${state.config.start_capital:,.2f}. "
+                  f"Target: ${state.config.win_target:,.0f}.[/]")
+    console.print("[dim]Type 'help' for commands. Ctrl+C to quit.[/]\n")
+
+    # Start clock thread
+    stop_event = threading.Event()
+    clock_thread = threading.Thread(
+        target=_clock_worker,
+        args=(state, console, stop_event),
+        daemon=True
+    )
+    clock_thread.start()
+
+    # Input loop — runs on main thread, never interrupted
+    try:
+        while state.alive and state.running:
+            try:
+                raw = input("> ")
+            except (EOFError, KeyboardInterrupt):
+                break
+            if not raw.strip():
+                continue
+
+            output = execute_command(state, raw.strip())
+
+            if not output:
+                continue
+
+            if output[0] == "__NEWGAME__":
+                from pathlib import Path
+                from sudo_rug.content.starter_scenarios import default_config
+                fresh = GameState(config=default_config())
+                state.__dict__.update(fresh.__dict__)
+                save_path = Path.home() / ".sudo_rug" / "save.json"
+                if save_path.exists():
+                    save_path.unlink()
+                console.print("[green]New game started.[/]")
+
+            elif output[0].startswith("__LOAD_JSON__"):
+                import json
+                parts = output[0].split("\n", 1)
+                try:
+                    data = json.loads(parts[1])
+                    new_state = GameState.from_dict(data)
+                    state.__dict__.update(new_state.__dict__)
+                    console.print(f"[green]✓ Loaded. Block #{state.clock_block}, "
+                                  f"${state.wallet.get('USD'):,.2f} USD[/]")
+                except Exception as e:
+                    console.print(f"[red]Load error: {e}[/]")
+
+            else:
+                for line in output:
+                    if line.startswith("__WAIT__"):
+                        blocks = int(line.replace("__WAIT__", ""))
+                        console.print(f"[dim]Waiting {blocks} blocks...[/]")
+                        last_count = len(state.log)
+                        for _ in range(blocks):
+                            time.sleep(state.config.tick_interval)
+                            _tick(state)
+                            last_count = _print_new_logs(state, console, last_count)
+                        console.print(f"[dim]Done.[/]")
+                    else:
+                        console.print(line)
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+
+    if state.won:
         console.print("\n[bold green]═══ YOU WIN ═══[/]")
         console.print("[dim]For now. The dark forest is patient.[/]")
+    elif not state.alive:
+        console.print("\n[bold red]═══ GAME OVER ═══[/]")
+        console.print("[dim]The chain remembers.[/]")
