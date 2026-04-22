@@ -33,6 +33,11 @@ def test_check_random_events_viral_tweet(state: GameState, monkeypatch):
     """Test Viral Tweet (Heat +10)"""
     monkeypatch.setattr("random.random", lambda: 0.012)
     state.wallet.debit("USD", 100.0)
+    
+    # Needs an active pool to trigger
+    from sudo_rug.core.state import Pool
+    state.pools["TEST/USD"] = Pool(token="TEST", base="USD", reserve_token=1000.0, reserve_base=100.0)
+    
     initial_heat = state.heat.level
     
     msgs = check_random_events(state)

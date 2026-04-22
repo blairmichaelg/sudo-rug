@@ -41,6 +41,7 @@ class SudoRugApp(App):
         self._clock_task: asyncio.Task | None = None
         self._boot_done = False
         self._waiting_blocks: int = 0
+        self._last_log_idx: int = 0
 
     def compose(self) -> ComposeResult:
         yield GameScreen()
@@ -103,6 +104,11 @@ class SudoRugApp(App):
         for msg in bot_messages:
             self.state.add_log(msg)
 
+        # 2.5 Random events
+        rand_events = check_random_events(self.state)
+        for r in rand_events:
+            self.state.add_log(r)
+
         # 3. Random ambient flavor (30% chance)
         if random.random() < 0.30:
             flavor = random_tick_flavor()
@@ -117,10 +123,6 @@ class SudoRugApp(App):
         warnings = check_heat_warnings(self.state)
         for w in warnings:
             self.state.add_log(w, style="bold yellow")
-            
-        rand_events = check_random_events(self.state)
-        for r in rand_events:
-            self.state.add_log(r)
 
         # 6. Check win/lose
         result = check_win_lose(self.state)
@@ -147,10 +149,6 @@ class SudoRugApp(App):
 
     def _flush_logs(self, log: GameLog) -> None:
         """Write any pending log entries to the log widget."""
-        # Find entries not yet written (simple: track last written index)
-        if not hasattr(self, "_last_log_idx"):
-            self._last_log_idx = 0
-
         entries = self.state.log[self._last_log_idx:]
         for entry in entries:
             log.write_game(entry.block, entry.message, entry.style)
