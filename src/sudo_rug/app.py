@@ -171,9 +171,16 @@ def input_loop(state: GameState, live: Live, loop: asyncio.AbstractEventLoop):
             state.running = False
             break
             
+        console.print(f"[cyan]> {raw.strip()}[/]")
         state.add_log(f"> {raw.strip()}", style="cyan")
         
-        if output and output[0] == "__NEWGAME__":
+        output = execute_command(state, raw.strip())
+        
+        if not output:
+            live.update(build_layout(state))
+            continue
+            
+        if output[0] == "__NEWGAME__":
             from sudo_rug.content.starter_scenarios import default_config
             from pathlib import Path
             fresh = GameState(config=default_config())
@@ -183,7 +190,7 @@ def input_loop(state: GameState, live: Live, loop: asyncio.AbstractEventLoop):
                 save_path.unlink()
             state.add_log("New game started.", style="green")
         
-        elif output and output[0].startswith("__LOAD_JSON__"):
+        elif output[0].startswith("__LOAD_JSON__"):
             import json
             parts = output[0].split("\n", 1)
             try:
