@@ -67,8 +67,8 @@ def tick_bots(state: GameState) -> list[str]:
         bot.blocks_remaining -= 1
 
         messages.append(
-            f"  bot: bought {result.amount_out:.2f} on {bot.market} "
-            f"for ${spend:.2f} (price: ${result.price_after:.4f})"
+            f"  [cyan]bot[/]: bought {result.amount_out:.2f} on {bot.market} "
+            f"for ${spend:.2f} (price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f})"
         )
 
         if bot.blocks_remaining <= 0 or bot.budget_remaining < 0.01:

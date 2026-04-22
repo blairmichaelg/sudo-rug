@@ -8,8 +8,7 @@ import random
 from textual.app import App, ComposeResult
 from textual.widgets import Input
 
-from sudo_rug.core.state import GameState
-from sudo_rug.core.events import check_win_lose, check_heat_warnings
+from sudo_rug.core.events import check_win_lose, check_heat_warnings, check_random_events
 from sudo_rug.sim.bots import tick_bots
 from sudo_rug.sim.heat import decay_heat
 from sudo_rug.shell.commands import execute_command
@@ -118,6 +117,10 @@ class SudoRugApp(App):
         warnings = check_heat_warnings(self.state)
         for w in warnings:
             self.state.add_log(w, style="bold yellow")
+            
+        rand_events = check_random_events(self.state)
+        for r in rand_events:
+            self.state.add_log(r)
 
         # 6. Check win/lose
         result = check_win_lose(self.state)
@@ -186,7 +189,7 @@ class SudoRugApp(App):
             # Fast-forward ticks
             for _ in range(blocks):
                 await self._tick()
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.02)
             log.write(f"[dim]...{blocks} blocks passed.[/]")
         else:
             # Normal output

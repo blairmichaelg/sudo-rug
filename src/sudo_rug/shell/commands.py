@@ -209,16 +209,16 @@ def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> li
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
-    heat_added = add_heat(state, ActionType.TRADE)
+    heat_added = add_heat(state, ActionType.TRADE_BUY)
     state.add_log(
         f"BUY: {result.amount_out:.2f} tokens on {market} "
-        f"for ${amount:.2f} (price: ${result.price_after:.6f})",
+        f"for ${amount:.2f} (price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f})",
     )
 
     return [
         f"[green]✓[/] Bought [bold]{result.amount_out:,.2f}[/] tokens",
         f"  Spent: ${amount:,.2f}",
-        f"  Price: ${result.price_before:.6f} → ${result.price_after:.6f}",
+        f"  Price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f}",
         f"  Fee: ${result.fee_paid:.4f}",
         f"  Heat +{heat_added:.1f}",
     ]
@@ -243,16 +243,16 @@ def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> l
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
-    heat_added = add_heat(state, ActionType.TRADE)
+    heat_added = add_heat(state, ActionType.TRADE_SELL)
     state.add_log(
         f"SELL: {amount:.2f} tokens on {market} "
-        f"for ${result.amount_out:.2f} (price: ${result.price_after:.6f})",
+        f"for ${result.amount_out:.2f} (price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f})",
     )
 
     return [
         f"[green]✓[/] Sold [bold]{amount:,.2f}[/] tokens",
         f"  Received: [green]${result.amount_out:,.2f}[/]",
-        f"  Price: ${result.price_before:.6f} → ${result.price_after:.6f}",
+        f"  Price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f}",
         f"  Fee: ${result.fee_paid:.4f}",
         f"  Heat +{heat_added:.1f}",
     ]

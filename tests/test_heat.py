@@ -18,7 +18,7 @@ class TestAddHeat:
         assert state.heat.level > 0
 
     def test_trade_adds_heat(self, state):
-        added = add_heat(state, ActionType.TRADE)
+        added = add_heat(state, ActionType.TRADE_BUY)
         assert added > 0
 
     def test_pull_liquidity_high_heat(self, state):
@@ -28,23 +28,23 @@ class TestAddHeat:
     def test_opsec_reduces_heat(self, state):
         # Low opsec
         state.opsec = 0.1
-        low_opsec = add_heat(state, ActionType.TRADE)
+        low_opsec = add_heat(state, ActionType.TRADE_BUY)
 
         # Reset
         state.heat.level = 0
         state.opsec = 0.8
-        high_opsec = add_heat(state, ActionType.TRADE)
+        high_opsec = add_heat(state, ActionType.TRADE_BUY)
 
         assert high_opsec < low_opsec
 
     def test_heat_history_tracked(self, state):
-        add_heat(state, ActionType.TRADE)
+        add_heat(state, ActionType.TRADE_BUY)
         assert len(state.heat.history) == 1
 
     def test_multiplier(self, state):
-        normal = add_heat(state, ActionType.TRADE, multiplier=1.0)
+        normal = add_heat(state, ActionType.TRADE_BUY, multiplier=1.0)
         state.heat.level = 0
-        doubled = add_heat(state, ActionType.TRADE, multiplier=2.0)
+        doubled = add_heat(state, ActionType.TRADE_BUY, multiplier=2.0)
         assert doubled == pytest.approx(normal * 2)
 
 

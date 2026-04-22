@@ -32,7 +32,8 @@ class EventType(Enum):
 class ActionType(Enum):
     """Player actions that affect heat."""
     DEPLOY_TOKEN = auto()
-    TRADE = auto()
+    TRADE_BUY = auto()
+    TRADE_SELL = auto()
     RUN_BOTS = auto()
     PULL_LIQUIDITY = auto()
     CREATE_POOL = auto()

@@ -8,10 +8,11 @@ from sudo_rug.core.state import GameState
 
 # Heat costs per action type
 HEAT_COSTS: dict[ActionType, float] = {
-    ActionType.DEPLOY_TOKEN: 5.0,
-    ActionType.TRADE: 1.0,
-    ActionType.RUN_BOTS: 3.0,
-    ActionType.PULL_LIQUIDITY: 30.0,
+    ActionType.DEPLOY_TOKEN: 10.0,
+    ActionType.TRADE_BUY: 1.0,
+    ActionType.TRADE_SELL: 3.0,
+    ActionType.RUN_BOTS: 5.0,
+    ActionType.PULL_LIQUIDITY: 50.0,
     ActionType.CREATE_POOL: 2.0,
 }
 

@@ -13,7 +13,7 @@ class GameConfig:
     """Tunable game parameters."""
     start_capital: float = 1000.0
     win_target: float = 50_000.0
-    tick_interval: float = 2.0  # seconds per block
+    tick_interval: float = 1.5  # seconds per block
     heat_decay_per_block: float = 0.5
     trade_fee: float = 0.003  # 0.3%
     starting_opsec: float = 0.1

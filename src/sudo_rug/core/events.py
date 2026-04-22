@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sudo_rug.core.enums import EventType
 from sudo_rug.core.state import GameState
+import random
 
 
 def check_win_lose(state: GameState) -> EventType | None:
@@ -67,3 +68,36 @@ def check_heat_warnings(state: GameState) -> list[str]:
         )
 
     return warnings
+
+
+def check_random_events(state: GameState) -> list[str]:
+    """Check and trigger random ambient events. Returns log messages."""
+    messages = []
+    
+    # Needs to have deployed something or have USD to be interesting
+    if not state.tokens and state.wallet.get("USD") == state.config.start_capital:
+        return messages
+
+    roll = random.random()
+    
+    # 2% chance per block for something bad/good to happen
+    if roll < 0.01:
+        # MEV Sandwich Attack (-1 to 5% of USD)
+        usd = state.wallet.get("USD")
+        if usd > 10.0:
+            loss = usd * random.uniform(0.01, 0.05)
+            state.wallet.debit("USD", loss)
+            messages.append(f"⚠ [red]MEV bots frontran your activity. Lost ${loss:.2f} to slippage.[/]")
+    elif roll < 0.015:
+        # Viral Tweet (Heat +10, if a pool exists, fake volume)
+        from sudo_rug.sim.heat import add_heat
+        # avoid circular imports for add_heat if possible... actually do it this way:
+        state.heat.level += 10.0
+        messages.append("⚠ [bold yellow]An influencer tweeted your ticker. Heat +10.0![/]")
+    elif roll < 0.02:
+        # Lucky break (Heat -15)
+        if state.heat.level > 20:
+            state.heat.level = max(0.0, state.heat.level - 15.0)
+            messages.append("★ [bold green]An on-chain sleuth's thread was debunked. Heat -15.0[/]")
+
+    return messages
