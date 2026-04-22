@@ -173,25 +173,22 @@ def input_loop(state: GameState, live: Live, loop: asyncio.AbstractEventLoop):
             
         state.add_log(f"> {raw.strip()}", style="cyan")
         
-        from sudo_rug.core.state import GameState as RealGameState
-        
-        output = execute_command(state, raw.strip())
-        
         if output and output[0] == "__NEWGAME__":
+            from sudo_rug.content.starter_scenarios import default_config
             from pathlib import Path
-            import os
+            fresh = GameState(config=default_config())
+            state.__dict__.update(fresh.__dict__)
             save_path = Path.home() / ".sudo_rug" / "save.json"
             if save_path.exists():
                 save_path.unlink()
-            state.add_log("[dim]Starting fresh run.[/]")
-            os._exit(0) # In Rich Live, easiest restart is forcing script exit if running without a global outer restart loop. Or we could just break out. But instructions don't require full newgame loop support in new setup. Wait! I should update the state in place like before.
+            state.add_log("New game started.", style="green")
         
         elif output and output[0].startswith("__LOAD_JSON__"):
             import json
             parts = output[0].split("\n", 1)
             try:
                 data = json.loads(parts[1])
-                new_state = RealGameState.from_dict(data)
+                new_state = GameState.from_dict(data)
                 
                 # Copy values over to current state to keep reference
                 state.__dict__.update(new_state.__dict__)
