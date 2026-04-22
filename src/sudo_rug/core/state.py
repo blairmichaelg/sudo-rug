@@ -122,12 +122,10 @@ class GameState:
     running: bool = True
 
     def __post_init__(self):
-        # Only initialize starting values if this is a fresh start (clock_block == 0)
-        if self.clock_block == 0 and not getattr(self, "_loading", False):
-            if "USD" not in self.wallet.balances or self.wallet.balances["USD"] == 0.0:
+        if self.clock_block == 0:
+            if self.wallet.balances.get("USD", 0.0) == 0.0:
                 self.wallet.balances["USD"] = self.config.start_capital
-            if self.opsec == 0.1: # Default
-                self.opsec = self.config.starting_opsec
+            self.opsec = self.config.starting_opsec
 
     def net_worth(self) -> float:
         """Calculate total net worth in USD."""
