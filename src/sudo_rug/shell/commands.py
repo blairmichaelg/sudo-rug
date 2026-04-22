@@ -332,22 +332,22 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
     except ValueError:
         return ["[red]Invalid budget or duration[/]"]
 
-    market_key = flags.get("market")
+    market_flag = flags.get("market", "").upper()
 
     allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.RUN_BOTS)
     if not allowed:
         return [lock_msg]
 
-    if not market_key:
+    if not market_flag:
         # Find the first active pool to target
         active_pools = [k for k, p in state.pools.items() if p.reserve_base > 0]
         if not active_pools:
             return ["[red]No active pools. Create a pool first.[/]"]
         market_key = active_pools[0]
     else:
-        market_key = market_key.upper()
+        market_key = market_flag
         if market_key not in state.pools or state.pools[market_key].reserve_base <= 0:
-            return [f"[red]Market {market_key} is not active.[/]"]
+            return [f"[red]Market {market_key} not found or drained.[/]"]
 
     result = create_bot_job(state, budget, duration, market_key)
     if isinstance(result, str):
@@ -360,7 +360,8 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
     )
 
     return [
-        f"[green]✓[/] Bots deployed on [bold]{market_key}[/]",
+        f"[green]✓[/] Bots deployed",
+        f"  Market: [cyan]{market_key}[/] {'(auto-selected)' if not market_flag else ''}",
         f"  Budget: ${budget:,.2f} over {duration} blocks",
         f"  (~${result.spend_per_block:,.2f}/block)",
         f"  Heat +{heat_added:.1f}",

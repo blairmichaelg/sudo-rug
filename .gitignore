@@ -16,3 +16,6 @@ env/
 *.log
 .DS_Store
 Thumbs.db
+# Diagnostic artifacts
+out.json
+*.diagnostic.json
