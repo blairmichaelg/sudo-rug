@@ -44,6 +44,9 @@ class SudoRugApp(App):
         self._waiting_blocks: int = 0
         self._last_log_idx: int = 0
 
+        self._history_idx: int = -1
+        self._cmd_history: list[str] = []
+
     def compose(self) -> ComposeResult:
         yield GameScreen()
 
@@ -63,9 +66,11 @@ class SudoRugApp(App):
         # Boot messages with delays
         for msg in BOOT_MESSAGES:
             log.write(msg)
-            await asyncio.sleep(0.15)
+            if not getattr(self, "_skip_boot_delays", False):
+                await asyncio.sleep(0.15)
 
-        await asyncio.sleep(0.3)
+        if not getattr(self, "_skip_boot_delays", False):
+            await asyncio.sleep(0.3)
         log.write(SYSTEM_READY)
 
         self.state.add_log("System initialized. Welcome to the dark forest.", style="green")
@@ -76,6 +81,7 @@ class SudoRugApp(App):
 
         status.refresh_state(self.state)
         self._boot_done = True
+        self._skip_boot_delays = False
 
         # Start the clock
         self._clock_task = asyncio.create_task(self._run_clock())
@@ -92,6 +98,16 @@ class SudoRugApp(App):
         """Process one block tick."""
         self.state.clock_block += 1
         block = self.state.clock_block
+
+        # Autosave every 50 blocks
+        if block > 0 and block % 50 == 0:
+            import json
+            from pathlib import Path
+            save_dir = Path.home() / ".sudo_rug"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            with open(save_dir / "save.json", "w") as f:
+                json.dump(self.state.to_dict(), f)
+            self.state.add_log("[dim]Autosaved.[/]")
 
         log = self.query_one("#game-log", GameLog)
         status = self.query_one("#status-panel", StatusPanel)
@@ -163,6 +179,12 @@ class SudoRugApp(App):
         if not raw:
             return
 
+        if not self._cmd_history or self._cmd_history[0] != raw:
+            self._cmd_history.insert(0, raw)
+        if len(self._cmd_history) > 50:
+            self._cmd_history.pop()
+        self._history_idx = -1
+
         if not self._boot_done:
             return
 
@@ -178,6 +200,7 @@ class SudoRugApp(App):
         log.write(f"\n[bold cyan]> {raw}[/]")
 
         # Execute
+        from sudo_rug.core.state import GameState
         output = execute_command(self.state, raw)
 
         # Handle wait command
@@ -190,6 +213,45 @@ class SudoRugApp(App):
                 await self._tick()
                 await asyncio.sleep(0.02)
             log.write(f"[dim]...{blocks} blocks passed.[/]")
+        elif output and output[0] == "__NEWGAME__":
+            from pathlib import Path
+            save_path = Path.home() / ".sudo_rug" / "save.json"
+            if save_path.exists():
+                save_path.unlink()
+            if self._clock_task:
+                self._clock_task.cancel()
+            self.state.running = False
+            self.state = GameState()
+            self._last_log_idx = 0
+            log.clear()
+            self._skip_boot_delays = True
+            self.state.add_log("[dim]Starting fresh run.[/]")
+            asyncio.create_task(self._boot_sequence())
+        elif output and output[0].startswith("__LOAD_JSON__"):
+            import json
+            parts = output[0].split("\n", 1)
+            try:
+                data = json.loads(parts[1])
+                new_state = GameState.from_dict(data)
+                
+                if self._clock_task:
+                    self._clock_task.cancel()
+                self.state.running = False
+                self.state = new_state
+                self._last_log_idx = len(self.state.log)
+                
+                log.write(f"[green]✓ loaded from Block #{self.state.clock_block}.[/]")
+                log.write(f"  Capital: ${self.state.wallet.get('USD'):,.2f}")
+                log.write(f"  Heat: {self.state.heat.level:.1f}")
+                log.write(f"  OpSec Tier: {self.state.opsec_tier}")
+                
+                status.refresh_state(self.state)
+                self.query_one("#header", HeaderBar).refresh_block(self.state.clock_block, True, False)
+                
+                self.state.running = True
+                self._clock_task = asyncio.create_task(self._run_clock())
+            except Exception as e:
+                log.write(f"[red]Error parsing save:[/] {e}")
         else:
             # Normal output
             for line in output:
@@ -202,6 +264,26 @@ class SudoRugApp(App):
         header.refresh_block(
             self.state.clock_block, self.state.alive, self.state.won
         )
+
+    async def on_key(self, event) -> None:
+        """Handle command history up/down arrows."""
+        if not self._cmd_history:
+            return
+            
+        inp = self.query_one("Input", Input)
+        if event.key == "up":
+            if self._history_idx < len(self._cmd_history) - 1:
+                self._history_idx += 1
+            inp.value = self._cmd_history[self._history_idx]
+            inp.cursor_position = len(inp.value)
+        elif event.key == "down":
+            if self._history_idx > 0:
+                self._history_idx -= 1
+                inp.value = self._cmd_history[self._history_idx]
+                inp.cursor_position = len(inp.value)
+            elif self._history_idx == 0:
+                self._history_idx = -1
+                inp.value = ""
 
     def action_quit_game(self) -> None:
         """Quit the game."""

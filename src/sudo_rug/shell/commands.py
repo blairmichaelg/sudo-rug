@@ -9,7 +9,7 @@ from sudo_rug.core.enums import ActionType
 from sudo_rug.sim.token_factory import deploy_meme_token
 from sudo_rug.sim.market import execute_buy, execute_sell, pull_liquidity
 from sudo_rug.sim.bots import create_bot_job
-from sudo_rug.sim.heat import add_heat, get_heat_bar
+from sudo_rug.sim.heat import add_heat, get_heat_bar, check_heat_lockdown
 from sudo_rug.sim.opsec import get_opsec_rating
 from sudo_rug.shell.helptext import HELP_OVERVIEW, HELP_DETAILS
 
@@ -36,6 +36,16 @@ def cmd_help(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
 def cmd_status(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Show game status."""
     nw = state.net_worth()
+    tier_info = ""
+    if state.opsec_tier == 0:
+        tier_info = " (Tier 1: $500)"
+    elif state.opsec_tier == 1:
+        tier_info = " (Tier 2: $2,000)"
+    elif state.opsec_tier == 2:
+        tier_info = " (Tier 3: $8,000)"
+    else:
+        tier_info = " (MAX)"
+
     lines = [
         f"[bold cyan]═══ STATUS ═══[/]",
         f"  Block:     [white]#{state.clock_block}[/]",
@@ -43,7 +53,7 @@ def cmd_status(state: GameState, pos: list[str], flags: dict[str, str]) -> list[
         f"  Net Worth: [{'green' if nw >= state.config.win_target * 0.5 else 'white'}]${nw:,.2f}[/]"
         f"  (target: ${state.config.win_target:,.0f})",
         f"  Heat:      {get_heat_bar(state.heat.level)}",
-        f"  OpSec:     {get_opsec_rating(state)}",
+        f"  OpSec:     {get_opsec_rating(state)}{tier_info}",
         f"  USD:       [green]${state.wallet.get('USD'):,.2f}[/]",
     ]
 
@@ -114,22 +124,32 @@ def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> 
     except ValueError:
         return [f"[red]Invalid supply: {supply_str}[/]"]
 
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.DEPLOY_TOKEN)
+    if not allowed:
+        return [lock_msg]
+
     result = deploy_meme_token(state, ticker, supply)
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
     heat_added = add_heat(state, ActionType.DEPLOY_TOKEN)
+    if penalty > 0:
+        state.heat.level += penalty
+        state.heat.history[-1] = (state.clock_block, state.heat.level)
+        heat_added += penalty
+
     state.add_log(
         f"TOKEN DEPLOYED: ${result.ticker} — supply: {result.total_supply:,.0f}",
         style="bold magenta"
     )
-    return [
-        f"[green]✓[/] Deployed [bold]{result.ticker}[/] — "
-        f"supply: {result.total_supply:,.0f}",
+    res_lines = [
+        f"[green]✓[/] Deployed [bold]{result.ticker}[/] — supply: {result.total_supply:,.0f}",
         f"  Credited to wallet. Heat +{heat_added:.1f}",
-        f"  Next: create a pool with [cyan]pool create --token {result.ticker} "
-        f"--base-amount <N> --token-amount <N>[/]",
     ]
+    if penalty > 0:
+        res_lines.append(f"  {lock_msg}")
+    res_lines.append(f"  Next: create a pool with [cyan]pool create --token {result.ticker} --base-amount <N> --token-amount <N>[/]")
+    return res_lines
 
 
 def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
@@ -165,6 +185,12 @@ def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> 
         state.wallet.credit("USD", base_amount)  # refund
         return [f"[red]Insufficient {ticker} (have {state.wallet.get(ticker):,.2f}, need {token_amount:,.2f})[/]"]
 
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.CREATE_POOL)
+    if not allowed:
+        state.wallet.credit("USD", base_amount)
+        state.wallet.credit(ticker, token_amount)
+        return [lock_msg]
+
     pool = Pool(
         token=ticker,
         base="USD",
@@ -174,6 +200,11 @@ def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> 
     state.pools[market_key] = pool
 
     heat_added = add_heat(state, ActionType.CREATE_POOL)
+    if penalty > 0:
+        state.heat.level += penalty
+        state.heat.history[-1] = (state.clock_block, state.heat.level)
+        heat_added += penalty
+
     initial_price = pool.price
     state.add_log(
         f"POOL CREATED: {market_key} — "
@@ -182,12 +213,15 @@ def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> 
         style="bold blue"
     )
 
-    return [
+    res = [
         f"[green]✓[/] Pool [bold]{market_key}[/] created",
         f"  Seeded: ${base_amount:,.2f} + {token_amount:,.0f} {ticker}",
         f"  Initial price: [cyan]${initial_price:.6f}[/]",
         f"  Heat +{heat_added:.1f}",
     ]
+    if penalty > 0:
+        res.append(f"  {lock_msg}")
+    return res
 
 
 def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
@@ -205,23 +239,35 @@ def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> li
     except ValueError:
         return [f"[red]Invalid amount: {amount_str}[/]"]
 
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.TRADE_BUY)
+    if not allowed:
+        return [lock_msg]
+
     result = execute_buy(state, market, amount)
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
     heat_added = add_heat(state, ActionType.TRADE_BUY)
+    if penalty > 0:
+        state.heat.level += penalty
+        state.heat.history[-1] = (state.clock_block, state.heat.level)
+        heat_added += penalty
+
     state.add_log(
         f"BUY: {result.amount_out:.2f} tokens on {market} "
         f"for ${amount:.2f} (price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f})",
     )
 
-    return [
+    res = [
         f"[green]✓[/] Bought [bold]{result.amount_out:,.2f}[/] tokens",
         f"  Spent: ${amount:,.2f}",
         f"  Price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f}",
         f"  Fee: ${result.fee_paid:.4f}",
         f"  Heat +{heat_added:.1f}",
     ]
+    if penalty > 0:
+        res.append(f"  {lock_msg}")
+    return res
 
 
 def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
@@ -239,23 +285,35 @@ def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> l
     except ValueError:
         return [f"[red]Invalid amount: {amount_str}[/]"]
 
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.TRADE_SELL)
+    if not allowed:
+        return [lock_msg]
+
     result = execute_sell(state, market, amount)
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
     heat_added = add_heat(state, ActionType.TRADE_SELL)
+    if penalty > 0:
+        state.heat.level += penalty
+        state.heat.history[-1] = (state.clock_block, state.heat.level)
+        heat_added += penalty
+
     state.add_log(
         f"SELL: {amount:.2f} tokens on {market} "
         f"for ${result.amount_out:.2f} (price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f})",
     )
 
-    return [
+    res = [
         f"[green]✓[/] Sold [bold]{amount:,.2f}[/] tokens",
         f"  Received: [green]${result.amount_out:,.2f}[/]",
         f"  Price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f}",
         f"  Fee: ${result.fee_paid:.4f}",
         f"  Heat +{heat_added:.1f}",
     ]
+    if penalty > 0:
+        res.append(f"  {lock_msg}")
+    return res
 
 
 def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
@@ -274,12 +332,22 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
     except ValueError:
         return ["[red]Invalid budget or duration[/]"]
 
-    # Find the first active pool to target
-    active_pools = [k for k, p in state.pools.items() if p.reserve_base > 0]
-    if not active_pools:
-        return ["[red]No active pools. Create a pool first.[/]"]
+    market_key = flags.get("market")
 
-    market_key = active_pools[0]
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.RUN_BOTS)
+    if not allowed:
+        return [lock_msg]
+
+    if not market_key:
+        # Find the first active pool to target
+        active_pools = [k for k, p in state.pools.items() if p.reserve_base > 0]
+        if not active_pools:
+            return ["[red]No active pools. Create a pool first.[/]"]
+        market_key = active_pools[0]
+    else:
+        market_key = market_key.upper()
+        if market_key not in state.pools or state.pools[market_key].reserve_base <= 0:
+            return [f"[red]Market {market_key} is not active.[/]"]
 
     result = create_bot_job(state, budget, duration, market_key)
     if isinstance(result, str):
@@ -306,12 +374,20 @@ def cmd_liquidity_pull(state: GameState, pos: list[str], flags: dict[str, str]) 
     if not market:
         return ["[red]Missing --market[/]. Usage: liquidity pull --market REKT/USD"]
 
+    allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.PULL_LIQUIDITY)
+    if not allowed:
+        return [lock_msg]
+
     result = pull_liquidity(state, market)
     if isinstance(result, str):
         return [f"[red]{result}[/]"]
 
     base_out, token_out = result
     heat_added = add_heat(state, ActionType.PULL_LIQUIDITY)
+    if penalty > 0:
+        state.heat.level += penalty
+        state.heat.history[-1] = (state.clock_block, state.heat.level)
+        heat_added += penalty
 
     state.add_log(
         f"⚠ LIQUIDITY PULLED: {market} — "
@@ -366,6 +442,95 @@ def cmd_quit(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
     return ["[dim]Disconnecting...[/]"]
 
 
+def cmd_opsec_upgrade(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Upgrade OpSec."""
+    from sudo_rug.sim.heat import check_heat_lockdown
+    allowed, _, lock_msg = check_heat_lockdown(state, ActionType.OPSEC_UPGRADE)
+    if not allowed:
+        return [lock_msg]
+
+    tier_str = flags.get("tier")
+    if not tier_str:
+        return ["[red]Missing --tier[/]. Usage: opsec upgrade --tier <1|2|3>"]
+    
+    try:
+        target_tier = int(tier_str)
+    except ValueError:
+        return ["[red]Tier must be 1, 2, or 3.[/]"]
+        
+    if target_tier <= state.opsec_tier:
+        return [f"[red]You already have OpSec tier {state.opsec_tier}.[/]"]
+    if target_tier != state.opsec_tier + 1:
+        return [f"[red]Must purchase tiers in order. Current tier {state.opsec_tier}. Next is {state.opsec_tier + 1}.[/]"]
+        
+    costs = {1: 500.0, 2: 2000.0, 3: 8000.0}
+    if target_tier not in costs:
+        return ["[red]Unknown tier. Tiers are 1, 2, 3.[/]"]
+        
+    cost = costs[target_tier]
+    if not state.wallet.debit("USD", cost):
+        return [f"[red]Insufficient USD (have ${state.wallet.get('USD'):,.2f}, need ${cost:,.2f})[/]"]
+        
+    state.opsec_tier = target_tier
+    if target_tier == 1:
+        state.opsec = 0.20
+        state.config.heat_decay_per_block += 0.1
+        desc = "burner wallet"
+    elif target_tier == 2:
+        state.opsec = 0.40
+        state.config.heat_decay_per_block += 0.2
+        desc = "VPN + mixer"
+    else:
+        state.opsec = 0.65
+        state.config.heat_decay_per_block += 0.3
+        desc = "full dark stack"
+        
+    return [
+        f"[green]✓[/] OpSec upgraded to Tier {target_tier}: {desc}",
+        f"  Cost: ${cost:,.2f}",
+        f"  Protection: {state.opsec*100:.0f}%",
+        f"  Heat Decay: {state.config.heat_decay_per_block:.1f}/block",
+    ]
+
+
+def cmd_save(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Save the game."""
+    import json
+    from pathlib import Path
+    save_dir = Path.home() / ".sudo_rug"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path = save_dir / "save.json"
+    
+    with open(save_path, "w") as f:
+        json.dump(state.to_dict(), f, indent=2)
+        
+    return [f"[green]✓[/] Game saved to ~/.sudo_rug/save.json (Block #{state.clock_block})"]
+
+
+def cmd_load(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Load the game."""
+    import json
+    from pathlib import Path
+    save_path = Path.home() / ".sudo_rug" / "save.json"
+    
+    if not save_path.exists():
+        return ["[red]No save file found at ~/.sudo_rug/save.json[/]"]
+        
+    try:
+        with open(save_path, "r") as f:
+            data = json.load(f)
+        return [f"__LOAD_JSON__\n{json.dumps(data)}"]
+    except Exception as e:
+        return [f"[red]Error loading save:[/] {e}"]
+
+
+def cmd_newgame(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Start a new game."""
+    if pos and pos[0] == "confirm":
+        return ["__NEWGAME__"]
+    return ["Current run will be lost. Type [cyan]newgame confirm[/] to start fresh."]
+
+
 # ─── Command Registry ────────────────────────────────────────────────────────
 
 COMMANDS: dict[str, CommandHandler] = {
@@ -380,6 +545,10 @@ COMMANDS: dict[str, CommandHandler] = {
     "liquidity_pull": cmd_liquidity_pull,
     "wait": cmd_wait,
     "logs": cmd_logs,
+    "opsec_upgrade": cmd_opsec_upgrade,
+    "save": cmd_save,
+    "load": cmd_load,
+    "newgame": cmd_newgame,
     "quit": cmd_quit,
 }
 

@@ -113,6 +113,7 @@ class GameState:
     pools: dict[str, Pool] = field(default_factory=dict)
     heat: HeatState = field(default_factory=HeatState)
     opsec: float = 0.1
+    opsec_tier: int = 0
     bots: list[BotJob] = field(default_factory=list)
     log: list[LogEntry] = field(default_factory=list)
     phase: GamePhase = GamePhase.HUSTLER
@@ -121,8 +122,12 @@ class GameState:
     running: bool = True
 
     def __post_init__(self):
-        self.wallet.balances["USD"] = self.config.start_capital
-        self.opsec = self.config.starting_opsec
+        # Only initialize starting values if this is a fresh start (clock_block == 0)
+        if self.clock_block == 0 and not getattr(self, "_loading", False):
+            if "USD" not in self.wallet.balances or self.wallet.balances["USD"] == 0.0:
+                self.wallet.balances["USD"] = self.config.start_capital
+            if self.opsec == 0.1: # Default
+                self.opsec = self.config.starting_opsec
 
     def net_worth(self) -> float:
         """Calculate total net worth in USD."""
@@ -139,3 +144,32 @@ class GameState:
         """Append a log entry."""
         entry = LogEntry(block=self.clock_block, message=message, style=style)
         self.log.append(entry)
+
+    def to_dict(self) -> dict:
+        import dataclasses
+        d = dataclasses.asdict(self)
+        d["phase"] = self.phase.name
+        # Remove log entries since we don't save them
+        d.pop("log", None)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> GameState:
+        # Create an instance by manually extracting keys and instantiating sub-dataclasses
+        from sudo_rug.core.enums import GamePhase
+        c = GameConfig(**d.pop("config", {}))
+        w = Wallet(**d.pop("wallet", {}))
+        h = HeatState(**d.pop("heat", {}))
+        
+        tokens = {k: Token(**v) for k, v in d.pop("tokens", {}).items()}
+        pools = {k: Pool(**v) for k, v in d.pop("pools", {}).items()}
+        bots = [BotJob(**v) for v in d.pop("bots", [])]
+        
+        phase_name = d.pop("phase", "HUSTLER")
+        phase = getattr(GamePhase, phase_name, GamePhase.HUSTLER)
+        
+        state = cls(
+            config=c, wallet=w, heat=h, tokens=tokens, pools=pools, bots=bots, phase=phase,
+            **d
+        )
+        return state

@@ -37,3 +37,4 @@ class ActionType(Enum):
     RUN_BOTS = auto()
     PULL_LIQUIDITY = auto()
     CREATE_POOL = auto()
+    OPSEC_UPGRADE = auto()

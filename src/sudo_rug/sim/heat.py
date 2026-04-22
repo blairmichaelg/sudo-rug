@@ -53,3 +53,29 @@ def get_heat_bar(level: float, width: int = 20) -> str:
 
     bar = "█" * filled + "░" * empty
     return f"[{color}]{bar}[/] {clamped:.1f}/100"
+
+
+def check_heat_lockdown(state: GameState, action: ActionType) -> tuple[bool, float, str | None]:
+    """Check if an action is allowed given current heat, and return (allowed, penalty, message)."""
+    h = state.heat.level
+
+    if h >= 90.0:
+        return False, 0.0, "[bold red]⚠ LOCKDOWN. Heat critical. Only passive actions allowed.[/]"
+
+    penalty = 0.0
+    msg = None
+
+    if h >= 75.0:
+        if action == ActionType.RUN_BOTS:
+            return False, 0.0, "[red]Heat too high to hire bots. Investigators are watching bot wallets.[/]"
+        if action == ActionType.DEPLOY_TOKEN:
+            penalty += 5.0
+            msg = "[dim]Elevated scrutiny. Deploy cost increased.[/]"
+
+    if h >= 50.0:
+        if action in (ActionType.TRADE_BUY, ActionType.TRADE_SELL):
+            penalty += 1.0
+            if not msg:
+                msg = "[dim]Elevated scrutiny. Trade heat increased.[/]"
+
+    return True, penalty, msg

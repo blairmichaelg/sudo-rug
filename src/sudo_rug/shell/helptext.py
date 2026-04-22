@@ -15,6 +15,10 @@ HELP_OVERVIEW = """\
   [green]trade sell[/]        Sell tokens for USD
   [green]bots run[/]          Hire bots to generate volume
   [green]liquidity pull[/]    Pull all liquidity (rug)
+  [green]opsec upgrade[/]     Upgrade OpSec tier
+  [green]save[/]              Save current game
+  [green]load[/]              Load saved game
+  [green]newgame[/]           Start a new game
   [green]wait[/]              Skip blocks
   [green]logs[/]              Show recent log entries
   [green]quit[/]              Exit the game
@@ -112,6 +116,7 @@ HELP_DETAILS: dict[str, str] = {
 [bold]Options:[/]
   --budget     USD to allocate to bots
   --duration   Number of blocks bots will trade for
+  --market     (Optional) Market pair to target (e.g. REKT/USD)
 
 [bold]Effects:[/]
   - Deducts budget from your wallet
@@ -179,6 +184,45 @@ Lists all currencies and their amounts.
 [bold]logs[/] — Show recent event log entries
 
 Displays the last 20 log entries with block timestamps.
+""",
+
+    "opsec_upgrade": """\
+[bold]opsec upgrade[/] — Upgrade your operational security
+
+[bold]Usage:[/]
+  opsec upgrade --tier <N>
+
+[bold]Options:[/]
+  --tier     Tier to purchase (1, 2, or 3)
+
+[bold]Effects:[/]
+  - Pays USD to permanently drop heat gain multiplier
+  - Permanently increases heat decay per block
+  - Must be purchased in order!
+""",
+
+    "save": """\
+[bold]save[/] — Save current game
+
+Saves progress to ~/.sudo_rug/save.json.
+Autosave happens every 50 blocks.
+""",
+
+    "load": """\
+[bold]load[/] — Load saved game
+
+Loads progress from ~/.sudo_rug/save.json.
+Replaces current run.
+""",
+
+    "newgame": """\
+[bold]newgame[/] — Start a new game
+
+[bold]Usage:[/]
+  newgame          (Warns and asks for confirmation)
+  newgame confirm  (Actually executes reset)
+
+Deletes current save and restarts fresh.
 """,
 
     "help": """\
