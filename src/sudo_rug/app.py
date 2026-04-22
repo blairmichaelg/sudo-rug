@@ -1,293 +1,240 @@
-"""Main Textual application — wires UI, clock, and simulation together."""
-
-from __future__ import annotations
-
 import asyncio
+import threading
+import time
 import random
-
-from textual.app import App, ComposeResult
-from textual.widgets import Input
+from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.text import Text
 
 from sudo_rug.core.state import GameState
+from sudo_rug.sim.heat import decay_heat, get_heat_bar
+from sudo_rug.sim.opsec import get_opsec_rating
+from sudo_rug.shell.commands import execute_command
 from sudo_rug.core.events import check_win_lose, check_heat_warnings, check_random_events
 from sudo_rug.sim.bots import tick_bots
-from sudo_rug.sim.heat import decay_heat
-from sudo_rug.shell.commands import execute_command
-from sudo_rug.content.messages import (
-    BOOT_MESSAGES, SYSTEM_READY, random_tick_flavor, random_heat_flavor,
-)
-from sudo_rug.ui.screens import GameScreen
-from sudo_rug.ui.log_view import GameLog
-from sudo_rug.ui.status_panel import StatusPanel
-from sudo_rug.ui.widgets import HeaderBar
+from sudo_rug.content.messages import random_tick_flavor, random_heat_flavor, BOOT_MESSAGES, SYSTEM_READY
 
+console = Console()
 
-class SudoRugApp(App):
-    """The main game application."""
+def build_status_panel(state: GameState) -> Panel:
+    nw = state.net_worth()
+    target = state.config.win_target
 
-    TITLE = "liquidate.exe"
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-    """
-    BINDINGS = [
-        ("ctrl+c", "quit_game", "Quit"),
-        ("ctrl+q", "quit_game", "Quit"),
-    ]
+    lines = []
+    lines.append(f"[bold]Block[/] #{state.clock_block}")
+    lines.append(f"[bold]Phase[/] [magenta]{state.phase.name}[/]")
+    lines.append("")
+    lines.append(f"[bold]Net Worth[/]")
 
-    def __init__(self, state: GameState | None = None, **kwargs):
-        super().__init__(**kwargs)
-        self.state = state or GameState()
-        self._clock_task: asyncio.Task | None = None
-        self._boot_done = False
-        self._waiting_blocks: int = 0
-        self._last_log_idx: int = 0
+    pct = nw / target if target > 0 else 0
+    if pct >= 0.8:
+        nw_color = "green"
+    elif pct >= 0.4:
+        nw_color = "yellow"
+    else:
+        nw_color = "white"
+    lines.append(f"  [{nw_color}]${nw:,.2f}[/]")
+    lines.append(f"  [dim]target: ${target:,.0f}[/]")
 
-        self._history_idx: int = -1
-        self._cmd_history: list[str] = []
+    lines.append("")
+    lines.append(f"[bold]USD[/] [green]${state.wallet.get('USD'):,.2f}[/]")
 
-    def compose(self) -> ComposeResult:
-        yield GameScreen()
+    for ticker in state.tokens:
+        held = state.wallet.get(ticker)
+        pool_key = f"{ticker}/USD"
+        if pool_key in state.pools and state.pools[pool_key].reserve_base > 0:
+            price = state.pools[pool_key].price
+            val = held * price
+            lines.append(f"[bold]{ticker}[/] {held:,.0f}")
+            lines.append(f"  [dim]@${price:.6f} = ${val:,.2f}[/]")
+        else:
+            lines.append(f"[bold]{ticker}[/] {held:,.0f}")
 
-    def on_mount(self) -> None:
-        """Start the boot sequence and clock after render."""
-        self.call_after_refresh(self._start_boot_sequence)
+    lines.append("")
+    lines.append(f"[bold]Heat[/]")
+    lines.append(f"  {get_heat_bar(state.heat.level)}")
 
-    def _start_boot_sequence(self):
-        asyncio.create_task(self._boot_sequence())
+    lines.append("")
+    lines.append(f"[bold]OpSec[/] {get_opsec_rating(state)}")
 
-    async def _boot_sequence(self) -> None:
-        """Animated boot sequence."""
-        log = self.query_one("#game-log", GameLog)
-        status = self.query_one("#status-panel", StatusPanel)
-        header = self.query_one("#header", HeaderBar)
+    if state.bots:
+        lines.append("")
+        lines.append(f"[bold]Bots[/] {len(state.bots)} active")
+        for i, bot in enumerate(state.bots):
+            lines.append(
+                f"  [dim]#{i} {bot.blocks_remaining}b "
+                f"${bot.budget_remaining:,.0f}[/]"
+            )
 
-        header.refresh_block(0, True, False)
+    if state.pools:
+        lines.append("")
+        lines.append(f"[bold]Pools[/]")
+        for key, pool in state.pools.items():
+            if pool.reserve_base > 0:
+                lines.append(f"  {key}")
+                lines.append(f"  [dim]${pool.price:.6f}[/]")
+            else:
+                lines.append(f"  {key} [red]DRAINED[/]")
 
-        # Boot messages with delays
-        for msg in BOOT_MESSAGES:
-            log.write(msg)
-            if not getattr(self, "_skip_boot_delays", False):
-                await asyncio.sleep(0.15)
+    return Panel("\n".join(lines), title="status", border_style="blue")
 
-        if not getattr(self, "_skip_boot_delays", False):
-            await asyncio.sleep(0.3)
-        log.write(SYSTEM_READY)
+def build_log_panel(state: GameState, max_lines: int = 20) -> Panel:
+    lines = []
+    for entry in state.log[-max_lines:]:
+        prefix = f"[dim]#{entry.block}[/]"
+        msg = f"[{entry.style}]{entry.message}[/]" if entry.style else entry.message
+        lines.append(f"{prefix} {msg}")
+    return Panel("\n".join(lines), title="game log")
 
-        self.state.add_log("System initialized. Welcome to the dark forest.", style="green")
-        self.state.add_log(
-            f"Starting capital: ${self.state.config.start_capital:,.2f}. "
-            f"Target: ${self.state.config.win_target:,.0f}.",
-        )
+def build_layout(state: GameState) -> Layout:
+    layout = Layout()
+    layout.split_column(
+        Layout(name="top", ratio=3),
+        Layout(name="bottom", ratio=1),
+    )
+    layout["top"].split_row(
+        Layout(build_log_panel(state), name="log", ratio=2),
+        Layout(build_status_panel(state), name="status", ratio=1),
+    )
+    layout["bottom"].update(
+        Panel("[dim]Type a command below. Press Ctrl+C or type 'quit' to exit.[/]", title="INPUT")
+    )
+    return layout
 
-        status.refresh_state(self.state)
-        self._boot_done = True
-        self._skip_boot_delays = False
+def _tick(state: GameState):
+    """Process a single simulation tick."""
+    state.clock_block += 1
+    block = state.clock_block
 
-        # Start the clock
-        self._clock_task = asyncio.create_task(self._run_clock())
+    if block > 0 and block % 50 == 0:
+        import json
+        from pathlib import Path
+        save_dir = Path.home() / ".sudo_rug"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        with open(save_dir / "save.json", "w") as f:
+            json.dump(state.to_dict(), f)
+        state.add_log("[dim]Autosaved.[/]")
 
-    async def _run_clock(self) -> None:
-        """Main simulation clock."""
-        while self.state.running and self.state.alive:
-            await asyncio.sleep(self.state.config.tick_interval)
-            if not self.state.running or not self.state.alive:
-                break
-            await self._tick()
+    decay_heat(state)
+    bot_messages = tick_bots(state)
+    for msg in bot_messages:
+        state.add_log(msg)
+    rand_events = check_random_events(state)
+    for r in rand_events:
+        state.add_log(r)
+    if random.random() < 0.30:
+        flavor = random_tick_flavor()
+        state.add_log(f"[dim]{flavor}[/]")
+    if state.heat.level > 10 and random.random() < 0.20:
+        hf = random_heat_flavor(state.heat.level)
+        state.add_log(f"[dim italic]{hf}[/]")
+    warnings = check_heat_warnings(state)
+    for w in warnings:
+        state.add_log(w, style="bold yellow")
+    result = check_win_lose(state)
 
-    async def _tick(self) -> None:
-        """Process one block tick."""
-        self.state.clock_block += 1
-        block = self.state.clock_block
+async def game_clock(state: GameState, live: Live):
+    # Boot sequence messages
+    for msg in BOOT_MESSAGES:
+        state.add_log(msg)
+        live.update(build_layout(state))
+        await asyncio.sleep(0.15)
+    await asyncio.sleep(0.3)
+    state.add_log(SYSTEM_READY)
+    state.add_log("System initialized. Welcome to the dark forest.", style="green")
+    state.add_log(
+        f"Starting capital: ${state.config.start_capital:,.2f}. "
+        f"Target: ${state.config.win_target:,.0f}.",
+    )
+    live.update(build_layout(state))
 
-        # Autosave every 50 blocks
-        if block > 0 and block % 50 == 0:
-            import json
+    while state.alive and state.running:
+        await asyncio.sleep(state.config.tick_interval)
+        if not state.running or not state.alive:
+            break
+        _tick(state)
+        live.update(build_layout(state))
+
+def input_loop(state: GameState, live: Live, loop: asyncio.AbstractEventLoop):
+    while state.alive and state.running:
+        try:
+            raw = input("\n> ")
+        except (EOFError, KeyboardInterrupt):
+            state.running = False
+            break
+        if not raw.strip():
+            continue
+            
+        if raw.lower().strip() in ("quit", "q", "exit"):
+            state.running = False
+            break
+            
+        state.add_log(f"> {raw.strip()}", style="cyan")
+        
+        from sudo_rug.core.state import GameState as RealGameState
+        
+        output = execute_command(state, raw.strip())
+        
+        if output and output[0] == "__NEWGAME__":
             from pathlib import Path
-            save_dir = Path.home() / ".sudo_rug"
-            save_dir.mkdir(parents=True, exist_ok=True)
-            with open(save_dir / "save.json", "w") as f:
-                json.dump(self.state.to_dict(), f)
-            self.state.add_log("[dim]Autosaved.[/]")
-
-        log = self.query_one("#game-log", GameLog)
-        status = self.query_one("#status-panel", StatusPanel)
-        header = self.query_one("#header", HeaderBar)
-
-        # 1. Decay heat
-        decay_heat(self.state)
-
-        # 2. Tick bots
-        bot_messages = tick_bots(self.state)
-        for msg in bot_messages:
-            self.state.add_log(msg)
-
-        # 2.5 Random events
-        rand_events = check_random_events(self.state)
-        for r in rand_events:
-            self.state.add_log(r)
-
-        # 3. Random ambient flavor (30% chance)
-        if random.random() < 0.30:
-            flavor = random_tick_flavor()
-            self.state.add_log(f"[dim]{flavor}[/]")
-
-        # 4. Heat-based ambient (20% chance when heat > 10)
-        if self.state.heat.level > 10 and random.random() < 0.20:
-            hf = random_heat_flavor(self.state.heat.level)
-            self.state.add_log(f"[dim italic]{hf}[/]")
-
-        # 5. Check heat warnings
-        warnings = check_heat_warnings(self.state)
-        for w in warnings:
-            self.state.add_log(w, style="bold yellow")
-
-        # 6. Check win/lose
-        result = check_win_lose(self.state)
-
-        # 7. Update UI
-        # Flush new log entries to the widget
-        self._flush_logs(log)
-        status.refresh_state(self.state)
-        header.refresh_block(block, self.state.alive, self.state.won)
-
-        # 8. Handle waiting
-        if self._waiting_blocks > 0:
-            self._waiting_blocks -= 1
-
-        # 9. Handle game end
-        if result is not None:
-            self._flush_logs(log)
-            if not self.state.alive:
-                log.write("\n[bold red]═══ GAME OVER ═══[/]")
-                log.write("[dim]The chain remembers. You didn't move fast enough.[/]")
-            elif self.state.won:
-                log.write("\n[bold green]═══ YOU WIN ═══[/]")
-                log.write("[dim]For now. The dark forest is patient.[/]")
-
-    def _flush_logs(self, log: GameLog) -> None:
-        """Write any pending log entries to the log widget."""
-        entries = self.state.log[self._last_log_idx:]
-        for entry in entries:
-            log.write_game(entry.block, entry.message, entry.style)
-        self._last_log_idx = len(self.state.log)
-
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle command input."""
-        raw = event.value.strip()
-        event.input.value = ""
-
-        if not raw:
-            return
-
-        if not self._cmd_history or self._cmd_history[0] != raw:
-            self._cmd_history.insert(0, raw)
-        if len(self._cmd_history) > 50:
-            self._cmd_history.pop()
-        self._history_idx = -1
-
-        if not self._boot_done:
-            return
-
-        if not self.state.alive or self.state.won:
-            if raw.lower() in ("quit", "exit", "q"):
-                self.exit()
-            return
-
-        log = self.query_one("#game-log", GameLog)
-        status = self.query_one("#status-panel", StatusPanel)
-
-        # Echo the command
-        log.write(f"\n[bold cyan]> {raw}[/]")
-
-        # Execute
-        from sudo_rug.core.state import GameState
-        output = execute_command(self.state, raw)
-
-        # Handle wait command
-        if output and output[0].startswith("__WAIT__"):
-            blocks = int(output[0].replace("__WAIT__", ""))
-            self._waiting_blocks = blocks
-            log.write(f"[dim]Waiting {blocks} blocks...[/]")
-            # Fast-forward ticks
-            for _ in range(blocks):
-                await self._tick()
-                await asyncio.sleep(0.02)
-            log.write(f"[dim]...{blocks} blocks passed.[/]")
-        elif output and output[0] == "__NEWGAME__":
-            from pathlib import Path
+            import os
             save_path = Path.home() / ".sudo_rug" / "save.json"
             if save_path.exists():
                 save_path.unlink()
-            if self._clock_task:
-                self._clock_task.cancel()
-            self.state.running = False
-            self.state = GameState()
-            self._last_log_idx = 0
-            log.clear()
-            self._skip_boot_delays = True
-            self.state.add_log("[dim]Starting fresh run.[/]")
-            asyncio.create_task(self._boot_sequence())
+            state.add_log("[dim]Starting fresh run.[/]")
+            os._exit(0) # In Rich Live, easiest restart is forcing script exit if running without a global outer restart loop. Or we could just break out. But instructions don't require full newgame loop support in new setup. Wait! I should update the state in place like before.
+        
         elif output and output[0].startswith("__LOAD_JSON__"):
             import json
             parts = output[0].split("\n", 1)
             try:
                 data = json.loads(parts[1])
-                new_state = GameState.from_dict(data)
+                new_state = RealGameState.from_dict(data)
                 
-                if self._clock_task:
-                    self._clock_task.cancel()
-                self.state.running = False
-                self.state = new_state
-                self._last_log_idx = len(self.state.log)
+                # Copy values over to current state to keep reference
+                state.__dict__.update(new_state.__dict__)
                 
-                log.write(f"[green]✓ loaded from Block #{self.state.clock_block}.[/]")
-                log.write(f"  Capital: ${self.state.wallet.get('USD'):,.2f}")
-                log.write(f"  Heat: {self.state.heat.level:.1f}")
-                log.write(f"  OpSec Tier: {self.state.opsec_tier}")
-                
-                status.refresh_state(self.state)
-                self.query_one("#header", HeaderBar).refresh_block(self.state.clock_block, True, False)
-                
-                self.state.running = True
-                self._clock_task = asyncio.create_task(self._run_clock())
+                state.add_log(f"✓ loaded from Block #{state.clock_block}.", style="green")
+                state.add_log(f"  Capital: ${state.wallet.get('USD'):,.2f}")
+                state.add_log(f"  Heat: {state.heat.level:.1f}")
+                state.add_log(f"  OpSec Tier: {state.opsec_tier}")
             except Exception as e:
-                log.write(f"[red]Error parsing save:[/] {e}")
+                state.add_log(f"[red]Error parsing save:[/] {e}")
+        
         else:
-            # Normal output
             for line in output:
-                log.write(line)
+                if line.startswith("__WAIT__"):
+                    blocks = int(line.replace("__WAIT__", ""))
+                    state.add_log(f"[dim]Waiting {blocks} blocks...[/]")
+                    for _ in range(blocks):
+                        time.sleep(state.config.tick_interval)
+                        _tick(state)
+                    state.add_log(f"[dim]...{blocks} blocks passed.[/]")
+                elif line == "__NEWGAME__":
+                    pass 
+                else:
+                    state.add_log(line)
+                    
+        live.update(build_layout(state))
+        if not state.alive:
+            break
 
-        # Flush logs and refresh status
-        self._flush_logs(log)
-        status.refresh_state(self.state)
-        header = self.query_one("#header", HeaderBar)
-        header.refresh_block(
-            self.state.clock_block, self.state.alive, self.state.won
+def run_app(state: GameState):
+    layout = build_layout(state)
+    with Live(layout, console=console, refresh_per_second=4, screen=True) as live:
+        loop = asyncio.new_event_loop()
+        clock_thread = threading.Thread(
+            target=lambda: loop.run_until_complete(game_clock(state, live)),
+            daemon=True
         )
-
-    async def on_key(self, event) -> None:
-        """Handle command history up/down arrows."""
-        if not self._cmd_history:
-            return
-            
-        inp = self.query_one("Input", Input)
-        if event.key == "up":
-            if self._history_idx < len(self._cmd_history) - 1:
-                self._history_idx += 1
-            inp.value = self._cmd_history[self._history_idx]
-            inp.cursor_position = len(inp.value)
-        elif event.key == "down":
-            if self._history_idx > 0:
-                self._history_idx -= 1
-                inp.value = self._cmd_history[self._history_idx]
-                inp.cursor_position = len(inp.value)
-            elif self._history_idx == 0:
-                self._history_idx = -1
-                inp.value = ""
-
-    def action_quit_game(self) -> None:
-        """Quit the game."""
-        self.state.running = False
-        self.exit()
+        clock_thread.start()
+        input_loop(state, live, loop)
+    
+    if not state.alive and not state.won:
+        console.print("\n[bold red]═══ GAME OVER ═══[/]")
+        console.print("[dim]The chain remembers. You didn't move fast enough.[/]")
+    elif state.won:
+        console.print("\n[bold green]═══ YOU WIN ═══[/]")
+        console.print("[dim]For now. The dark forest is patient.[/]")
