@@ -35,8 +35,13 @@ class TestWinLose:
     def test_win(self, state):
         state.wallet.credit("USD", 50_000)
         result = check_win_lose(state)
+        # In Milestone 2, hitting the first target triggers ARCHITECT phase and returns WIN
         assert result == EventType.WIN
-        assert state.won
+        assert state.phase.name == "ARCHITECT"
+        # The win_target is then upped to 500k
+        assert state.config.win_target == 500_000.0
+        # It's not a terminal "won = True" yet in HUSTLER -> ARCHITECT phase shift
+        assert not state.won
 
     def test_alive_and_playing(self, state):
         result = check_win_lose(state)

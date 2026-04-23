@@ -547,7 +547,7 @@ def cmd_risk(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
 
     lines = [
         "══════════════════════ RISK ══════════════════════",
-        f"Heat:     {heat:.1f}  [{band}]   OpSec mod: -{state.opsec:.2f}",
+        f"Heat:     {heat:.1f}  [{band}]   OpSec mod: {state.opsec:.2f} (heat reduction)",
         "──────────────────────────────────────────────────",
         "ACTIVE PENALTIES"
     ]
