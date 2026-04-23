@@ -132,11 +132,23 @@ def run_app(state: GameState):
             
         tick_count = get_tick_count(raw)
         
+        is_wait = False
+        wait_blocks = 0
+        if result and any(line.startswith("__WAIT__") for line in result):
+            is_wait = True
+            for line in result:
+                if line.startswith("__WAIT__"):
+                    wait_blocks = int(line.replace("__WAIT__", ""))
+            console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Advancing {wait_blocks} blocks...")
+
         for _ in range(tick_count):
             _tick(state)
             
         last_idx = _print_new_logs(state, console, last_idx)
         
+        if is_wait:
+            console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Done.")
+
         if result:
             for line in result:
                 if not line.startswith("__") and not line.startswith("[SYS] Autosaved"):
