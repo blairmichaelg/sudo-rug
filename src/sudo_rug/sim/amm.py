@@ -53,7 +53,7 @@ def calc_swap_exact_in(
     new_reserve_in = reserve_in + amount_in
     new_reserve_out = reserve_out - amount_out
 
-    price_after = new_reserve_out / new_reserve_in if new_reserve_in > 0 else 0
+    price_after = new_reserve_out / new_reserve_in if new_reserve_in > 0 and new_reserve_out > 0 else 0.0
 
     return SwapResult(
         amount_in=amount_in,

@@ -292,9 +292,13 @@ def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> li
         state.heat.history[-1] = (state.clock_block, state.heat.level)
         heat_added += penalty
 
+    price_str = f"${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f}"
+    if result.price_after > 1000 * result.price_before:
+        price_str = f"${result.price_before:.6f} [green]▲[/] N/A"
+
     state.add_log(
         f"[MKT] BUY: {result.amount_out:.2f} tokens on {market} "
-        f"for ${amount:.2f} (price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f})",
+        f"for ${amount:.2f} (price: {price_str})",
     )
 
     res = [
