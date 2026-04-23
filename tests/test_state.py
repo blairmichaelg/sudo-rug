@@ -21,8 +21,8 @@ class TestNetWorth:
         state.pools["X/USD"] = Pool(
             token="X", base="USD", reserve_token=100, reserve_base=1000
         )
-        # tokens worth 100 * (1000/100) = 1000
-        assert state.net_worth() == pytest.approx(2000)
+        # 1000 starting USD + 1000 tokens value + 1000 LP reserve_base
+        assert state.net_worth() == pytest.approx(3000)
 
 
 class TestWinLose:

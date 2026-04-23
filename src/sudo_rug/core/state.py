@@ -130,12 +130,20 @@ class GameState:
     def net_worth(self) -> float:
         """Calculate total net worth in USD."""
         total = self.wallet.get("USD")
-        for ticker, token in self.tokens.items():
+        
+        # Add value of held tokens
+        for ticker in self.tokens:
             pool_key = f"{ticker}/USD"
             if pool_key in self.pools:
                 pool = self.pools[pool_key]
                 held = self.wallet.get(ticker)
                 total += held * pool.price
+                
+        # Add value of LP positions (USD reserves in pools where player is deployer)
+        for pool in self.pools.values():
+            # In sudo-rug v1, the player is effectively the only LP
+            total += pool.reserve_base
+            
         return total
 
     def add_log(self, message: str, style: str = "") -> None:
