@@ -54,18 +54,16 @@ def _print_new_logs(state: GameState, console: Console, since: int = 0):
     return len(state.log)
 
 def get_tick_count(raw: str) -> int:
-    cmd = raw.strip().lower()
-    if cmd in ("help", "status", "s", "wallet", "w", "log", "l", "risk", "r", "positions", "pos", "bots list", "save", "load", "newgame", "quit", "exit", "q"):
+    tokens = raw.strip().lower().split()
+    if not tokens: return 0
+    cmd = tokens[0]
+    # Commands that do NOT advance the block
+    if cmd in ("help", "status", "s", "wallet", "w", "log", "l", "risk", "r", "positions", "pos", "bots", "save", "load", "newgame", "quit", "exit", "q", ".", "$", "/", "!", "wait"):
+        if cmd == "wait" or cmd == "w":
+            if len(tokens) >= 2 and tokens[1].isdigit():
+                return int(tokens[1])
+            return 0 # If w or wait with no args, it returns 0 and command handler returns __WAIT__1
         return 0
-    if cmd.startswith("help "):
-        return 0
-    if cmd.startswith("wait"):
-        parts = cmd.split()
-        if len(parts) == 2 and parts[1].isdigit():
-            return int(parts[1])
-        if len(parts) == 3 and parts[1] == "--blocks" and parts[2].isdigit():
-            return int(parts[2])
-        return 1
     return 1
 
 def handle_special_result(result: list[str], state: GameState, console: Console) -> bool:

@@ -22,11 +22,24 @@ def cmd_help(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
     """Show help."""
     if pos:
         key = pos[0]
+        # Resolve common aliases for help lookup
+        alias_map = {
+            ".": "status",
+            "/": "log",
+            "!": "risk",
+            "$": "wallet",
+            "w": "wait",
+            "b": "buy",
+            "s": "sell" # and s_alias
+        }
+        key = alias_map.get(key, key)
+        
         # Try compound
         if len(pos) >= 2:
             compound = f"{pos[0]}_{pos[1]}"
             if compound in HELP_DETAILS:
                 return [HELP_DETAILS[compound]]
+        
         if key in HELP_DETAILS:
             return [HELP_DETAILS[key]]
         return [f"[red]No help found for '{key}'[/]"]
@@ -132,13 +145,13 @@ def cmd_wallet(state: GameState, pos: list[str], flags: dict[str, str]) -> list[
 
 def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Deploy a meme token."""
-    ticker = flags.get("ticker")
-    supply_str = flags.get("supply")
+    ticker = flags.get("ticker") or flags.get("t")
+    supply_str = flags.get("supply") or flags.get("s")
 
     if not ticker:
-        return ["[red]Missing --ticker[/]. Usage: deploy meme --ticker REKT --supply 1000000"]
+        return ["[red]Missing -t / --ticker[/]. Usage: launch -t REKT -s 1000000"]
     if not supply_str:
-        return ["[red]Missing --supply[/]. Usage: deploy meme --ticker REKT --supply 1000000"]
+        return ["[red]Missing -s / --supply[/]. Usage: launch -t REKT -s 1000000"]
 
     try:
         supply = float(supply_str)
@@ -169,22 +182,25 @@ def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> 
     ]
     if penalty > 0:
         res_lines.append(f"  {lock_msg}")
-    res_lines.append(f"  Next: create a pool with [cyan]pool create --token {result.ticker} --base-amount <N> --token-amount <N>[/]")
+    res_lines.append(f"  Next: seed the pool with [cyan]seed {result.ticker}/USD -b <N> -t <N>[/]")
     return res_lines
 
 
 def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Create a liquidity pool."""
-    ticker = flags.get("token", "").upper()
-    base_str = flags.get("base_amount")
-    token_str = flags.get("token_amount")
+    ticker = (flags.get("token") or flags.get("t") or "").upper()
+    base_str = flags.get("base_amount") or flags.get("b")
+    token_str = flags.get("token_amount") or flags.get("t") # Overlapping but resolved below
+
+    if not ticker and pos:
+        ticker = pos[0].split("/")[0].upper()
 
     if not ticker:
-        return ["[red]Missing --token[/]. Usage: pool create --token REKT --base-amount 500 --token-amount 500000"]
+        return ["[red]Missing -t / --token[/]. Usage: seed REKT/USD -b 500 -t 500000"]
     if not base_str:
-        return ["[red]Missing --base-amount[/]"]
+        return ["[red]Missing -b / --base-amount[/]"]
     if not token_str:
-        return ["[red]Missing --token-amount[/]"]
+        return ["[red]Missing -t / --token-amount[/]"]
 
     try:
         base_amount = float(base_str)
@@ -247,13 +263,16 @@ def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> 
 
 def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Buy tokens."""
-    market = flags.get("market", "").upper()
-    amount_str = flags.get("amount")
+    market = (flags.get("market") or flags.get("m") or "").upper()
+    amount_str = flags.get("amount") or flags.get("a")
+
+    if not market and pos:
+        market = pos[0].upper()
 
     if not market:
-        return ["[red]Missing --market[/]. Usage: trade buy --market REKT/USD --amount 100"]
+        return ["[red]Missing -m / --market[/]. Usage: buy -m REKT/USD -a 100"]
     if not amount_str:
-        return ["[red]Missing --amount[/]"]
+        return ["[red]Missing -a / --amount[/]"]
 
     try:
         amount = float(amount_str)
@@ -293,13 +312,16 @@ def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> li
 
 def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Sell tokens."""
-    market = flags.get("market", "").upper()
-    amount_str = flags.get("amount")
+    market = (flags.get("market") or flags.get("m") or "").upper()
+    amount_str = flags.get("amount") or flags.get("a")
+
+    if not market and pos:
+        market = pos[0].upper()
 
     if not market:
-        return ["[red]Missing --market[/]. Usage: trade sell --market REKT/USD --amount 50000"]
+        return ["[red]Missing -m / --market[/]. Usage: sell -m REKT/USD -a 50000"]
     if not amount_str:
-        return ["[red]Missing --amount[/]"]
+        return ["[red]Missing -a / --amount[/]"]
 
     try:
         amount = float(amount_str)
@@ -339,13 +361,13 @@ def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> l
 
 def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Hire bots."""
-    budget_str = flags.get("budget")
-    duration_str = flags.get("duration")
+    budget_str = flags.get("budget") or flags.get("b")
+    duration_str = flags.get("duration") or flags.get("d")
 
     if not budget_str:
-        return ["[red]Missing --budget[/]. Usage: bots run --budget 200 --duration 10"]
+        return ["[red]Missing -b / --budget[/]. Usage: snipe -b 200 -d 10"]
     if not duration_str:
-        return ["[red]Missing --duration[/]"]
+        return ["[red]Missing -d / --duration[/]"]
 
     try:
         budget = float(budget_str)
@@ -353,7 +375,11 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
     except ValueError:
         return ["[red]Invalid budget or duration[/]"]
 
-    market_flag = flags.get("market", "").upper()
+    market_flag = (flags.get("market") or flags.get("m") or "").upper()
+    
+    # Positionals for market
+    if not market_flag and pos:
+        market_flag = pos[0].upper()
 
     allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.RUN_BOTS)
     if not allowed:
@@ -391,10 +417,13 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
 
 def cmd_liquidity_pull(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Pull liquidity (rug)."""
-    market = flags.get("market", "").upper()
+    market = (flags.get("market") or flags.get("m") or "").upper()
+    
+    if not market and pos:
+        market = pos[0].upper()
 
     if not market:
-        return ["[red]Missing --market[/]. Usage: liquidity pull --market REKT/USD"]
+        return ["[red]Missing -m / --market[/]. Usage: rug REKT/USD"]
 
     allowed, penalty, lock_msg = check_heat_lockdown(state, ActionType.PULL_LIQUIDITY)
     if not allowed:
@@ -693,28 +722,35 @@ def cmd_newgame(state: GameState, pos: list[str], flags: dict[str, str]) -> list
 COMMANDS: dict[str, CommandHandler] = {
     "help": cmd_help,
     "status": cmd_status,
-    "s": cmd_status,
+    ".": cmd_status,
     "wallet": cmd_wallet,
-    "w": cmd_wallet,
+    "$": cmd_wallet,
+    "wait": cmd_wait,
+    "w": cmd_wait,
     "positions": cmd_positions,
     "pos": cmd_positions,
+    "launch": cmd_deploy_meme,
     "token_deploy": cmd_deploy_meme,
     "deploy": cmd_deploy_meme,
+    "seed": cmd_pool_create,
     "pool_create": cmd_pool_create,
-    "trade_buy": cmd_trade_buy,
     "buy": cmd_trade_buy,
-    "trade_sell": cmd_trade_sell,
+    "trade_buy": cmd_trade_buy,
+    "b": cmd_trade_buy,
     "sell": cmd_trade_sell,
+    "trade_sell": cmd_trade_sell,
+    "s": cmd_trade_sell,
+    "snipe": cmd_bots_run,
     "bots_hire": cmd_bots_run,
+    "bots": cmd_bots_list,
     "bots_list": cmd_bots_list,
+    "rug": cmd_liquidity_pull,
     "liquidity_pull": cmd_liquidity_pull,
     "pool_drain": cmd_liquidity_pull,
-    "rug": cmd_liquidity_pull,
-    "wait": cmd_wait,
     "log": cmd_logs,
-    "l": cmd_logs,
+    "/": cmd_logs,
     "risk": cmd_risk,
-    "r": cmd_risk,
+    "!": cmd_risk,
     "opsec_upgrade": cmd_opsec_upgrade,
     "save": cmd_save,
     "load": cmd_load,

@@ -27,9 +27,9 @@ def parse_args(tokens: list[str]) -> tuple[list[str], dict[str, str]]:
     i = 0
     while i < len(tokens):
         token = tokens[i]
-        if token.startswith("--"):
+        if token.startswith("-"):
             key = token.lstrip("-").replace("-", "_")
-            if i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
+            if i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
                 flags[key] = tokens[i + 1]
                 i += 2
             else:
