@@ -78,9 +78,10 @@ def check_random_events(state: GameState) -> list[str]:
     if not state.tokens and state.wallet.get("USD") == state.config.start_capital:
         return messages
 
-    # MEV Sandwich Attack (1% chance per block if USD > 50): drain 1-5% of USD, small heat spike
+    # MEV Sandwich Attack (1% chance per block if USD > 50 and pools exist)
     usd = state.wallet.get("USD")
-    if random.random() < 0.01 and usd > 50.0:
+    active_pools = [p for p in state.pools.values() if p.reserve_base > 0]
+    if random.random() < 0.01 and usd > 50.0 and active_pools:
         loss = usd * random.uniform(0.01, 0.05)
         state.wallet.debit("USD", loss)
         state.heat.level += 2.0

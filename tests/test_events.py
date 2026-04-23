@@ -18,8 +18,10 @@ def test_check_random_events_mev_drain(state: GameState, monkeypatch):
     # 0.005 triggers MEV event (roll < 0.01)
     monkeypatch.setattr("random.random", lambda: 0.005)
     
-    # Must have something deployed or non-start USD amount
+    # Must have something deployed or non-start USD amount AND an active pool
     state.wallet.credit("USD", 100.0) # Now at 1100.0
+    from sudo_rug.core.state import Pool
+    state.pools["TEST/USD"] = Pool(token="TEST", base="USD", reserve_token=1000, reserve_base=100)
     initial_usd = state.wallet.get("USD")
     
     msgs = check_random_events(state)

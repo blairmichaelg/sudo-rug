@@ -36,11 +36,20 @@ def _print_new_logs(state: GameState, console: Console, since: int = 0):
     """Print any log entries added since `since` index."""
     new_entries = state.log[since:]
     for entry in new_entries:
-        prefix = f"[dim]#{entry.block:04d}[/] "
+        # entry.message already starts with [TAG]
+        msg = entry.message
+        tag = ""
+        content = msg
+        if msg.startswith("[") and "]" in msg:
+            end_idx = msg.find("]") + 1
+            tag = msg[:end_idx]
+            content = msg[end_idx:].strip()
+        
+        formatted_line = f"{tag} [dim]#{entry.block:04d}[/] {content}"
         if entry.style:
-            console.print(f"{prefix}[{entry.style}]{entry.message}[/]")
+            console.print(f"[{entry.style}]{formatted_line}[/]")
         else:
-            console.print(f"{prefix}{entry.message}")
+            console.print(formatted_line)
     return len(state.log)
 
 def get_tick_count(raw: str) -> int:
