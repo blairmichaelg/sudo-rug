@@ -459,42 +459,127 @@ def cmd_logs(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
 
 def cmd_positions(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Show all pool exposures."""
-    lines = ["═════════════════════ POSITIONS ═════════════════════"]
     nw = state.net_worth()
-    if nw == 0: nw = 1
+    if nw <= 0: nw = 1.0
     
-    for ticker in state.tokens:
+    lines = [
+        "══════════════════════ POSITIONS ══════════════════════",
+        "Pool           LP Value    % Net Worth   Price",
+        "────────────────────────────────────────────────────────"
+    ]
+    
+    total_exposed = 0.0
+    has_positions = False
+    
+    # Sort for stable output
+    for ticker in sorted(state.tokens.keys()):
         held = state.wallet.get(ticker)
         pool_key = f"{ticker}/USD"
         if pool_key in state.pools and held > 0:
-            price = state.pools[pool_key].price
+            pool = state.pools[pool_key]
+            price = pool.price
             val = held * price
             pct = (val / nw) * 100
-            lines.append(f"{ticker:<10} ${val:,.2f} ({pct:.1f}% of net worth)")
+            total_exposed += val
+            lines.append(f"{pool_key:<14} ${val:,.2f}".ljust(27) + f"{pct:.1f}%".ljust(14) + f"${price:.6f}")
+            has_positions = True
             
-    if len(lines) == 1:
-        lines.append("No active pool positions.")
+    if not has_positions:
+        return ["No open positions."]
+        
+    liquid_usd = state.wallet.get("USD")
+    liquid_pct = (liquid_usd / nw) * 100
+    exposed_pct = (total_exposed / nw) * 100
+    
+    lines.extend([
+        "────────────────────────────────────────────────────────",
+        f"Total exposed: ${total_exposed:,.2f}   {exposed_pct:.1f}% of net worth",
+        f"Liquid USD:    ${liquid_usd:,.2f}   {liquid_pct:.1f}%",
+        "═══════════════════════════════════════════════════════"
+    ])
     return lines
 
 def cmd_risk(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Show risk breakdown."""
-    heat_lab = "Normal"
-    if state.heat.level >= 80: heat_lab = "Critical"
-    elif state.heat.level >= 60: heat_lab = "High"
-    elif state.heat.level >= 30: heat_lab = "Elevated"
+    heat = state.heat.level
     
-    lines = [
-        "═══════════════════════ RISK ════════════════════════",
-        f"Heat:  {state.heat.level:.1f}/100 [{heat_lab}]",
-        f"OpSec: {state.opsec*100:.0f}% Protection",
-        "─────────────────────────────────────────────────────"
-    ]
-    if state.heat.level >= 80:
-        lines.append("[red]⚠ CRITICAL HEAT. BOTS LOCKED. TRADES PENALIZED Heavily.[/]")
-    elif state.heat.level >= 50:
-        lines.append("[yellow]⚠ HIGH HEAT. Tracing imminent. Trades penalized.[/]")
+    # Determine band and parameters
+    if heat < 30:
+        band = "Normal"
+        slippage = 0
+        bot_cost = 0
+        events = "None"
+        locked = ["None currently locked."]
+        next_band = "Elevated (30)"
+        next_specs = ["Trade slippage      +15%", "Bot hire cost       +20%", "Event frequency     Low"]
+    elif heat < 60:
+        band = "Elevated"
+        slippage = 15
+        bot_cost = 20
+        events = "Low"
+        locked = ["None currently locked."]
+        next_band = "High (60)"
+        next_specs = ["Trade slippage      +25%", "Bot hire cost       +40%", "Random trace events enabled"]
+    elif heat < 80:
+        band = "High"
+        slippage = 25
+        bot_cost = 40
+        events = "Medium"
+        locked = ["None currently locked."]
+        next_band = "Critical (80)"
+        next_specs = ["Trade slippage      +35%", "Pool drain penalty  +10% of liquidity burned", "bots hire           LOCKED"]
+    elif heat < 100:
+        band = "Critical"
+        slippage = 35
+        bot_cost = 0 # Locked anyway
+        events = "High"
+        locked = ["bots hire"]
+        next_band = "BURNED (100)"
+        next_specs = ["Trace complete", "All funds frozen", "Game Over"]
     else:
-        lines.append("[green]✓ Heat acceptable. Operating normally.[/]")
+        band = "BURNED"
+        slippage = 100
+        bot_cost = 100
+        events = "TERMINAL"
+        locked = ["ALL ACTIONS LOCKED"]
+        next_band = None
+        next_specs = []
+
+    lines = [
+        "══════════════════════ RISK ══════════════════════",
+        f"Heat:     {heat:.1f}  [{band}]   OpSec mod: -{state.opsec:.2f}",
+        "──────────────────────────────────────────────────",
+        "ACTIVE PENALTIES"
+    ]
+    
+    if band == "Normal":
+        lines.append("  None")
+    else:
+        if slippage > 0: lines.append(f"  Trade slippage      +{slippage}%")
+        if bot_cost > 0 and band != "Critical": lines.append(f"  Bot hire cost       +{bot_cost}%")
+        if band == "Critical": lines.append("  Pool drain penalty  +10% of liquidity burned")
+        lines.append(f"  Event frequency     {events}")
+
+    if next_band:
+        lines.extend([
+            "",
+            f"NEXT THRESHOLD — {next_band}"
+        ])
+        for spec in next_specs:
+            lines.append(f"  {spec}")
+
+    lines.extend([
+        "",
+        "LOCKED ACTIONS"
+    ])
+    for entry in locked:
+        lines.append(f"  {entry}")
+
+    lines.extend([
+        "",
+        "TIP: upgrade opsec to reduce heat impact.",
+        "══════════════════════════════════════════════════"
+    ])
     return lines
 
 def cmd_bots_list(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:

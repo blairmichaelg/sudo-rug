@@ -4,6 +4,7 @@ from sudo_rug.core.state import GameState
 from sudo_rug.sim.heat import decay_heat
 from sudo_rug.shell.commands import execute_command
 from sudo_rug.core.events import check_win_lose, check_heat_warnings, check_random_events
+from sudo_rug.core.enums import GamePhase
 from sudo_rug.sim.bots import tick_bots
 
 def _tick(state: GameState):
@@ -150,14 +151,62 @@ def run_app(state: GameState):
         if is_wait:
             console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Done.")
 
+        # Check for Phase Up (trigger screen immediately)
+        if state.phase == GamePhase.ARCHITECT and not getattr(state, "_shown_architect_banner", False):
+            console.print("\n"
+                "  ╔══════════════════════════════════════════════╗\n"
+                "  ║            PHASE UP: ARCHITECT               ║\n"
+                "  ╠══════════════════════════════════════════════╣\n"
+                "  ║  Capital target hit: $50,000.00              ║\n"
+                "  ║  New capabilities unlocked:                  ║\n"
+                "  ║    - audit    Scan protocols for vulns        ║\n"
+                "  ║    - deploy protocol  Launch your own infra   ║\n"
+                "  ║    - governance       Vote on proposals       ║\n"
+                "  ║  New target: $500,000.00                     ║\n"
+                "  ╚══════════════════════════════════════════════╝\n")
+            state._shown_architect_banner = True
+
         if result:
             for line in result:
                 if not line.startswith("__") and not line.startswith("[SYS] Autosaved"):
                     console.print(line)
 
+    if not state.alive:
+        nw = state.net_worth()
+        console.print("\n"
+            "  ╔══════════════════════════════════════════════╗\n"
+            "  ║               TERMINAL: BURNED               ║\n"
+            "  ╠══════════════════════════════════════════════╣\n"
+            "  ║  Heat reached 100. Trace complete.           ║\n"
+            "  ║  Your wallets are flagged. Funds frozen.     ║\n"
+            "  ║                                              ║\n"
+            "  ║  Final net worth:  $" + f"{nw:,.2f}".ljust(25) + "║\n"
+            "  ║  Blocks survived:  #" + f"{state.clock_block:04d}".ljust(25) + "║\n"
+            "  ║                                              ║\n"
+            "  ║  Type `newgame` to start over.               ║\n"
+            "  ╚══════════════════════════════════════════════╝\n")
+        
+        # Restricted prompt loop
+        while not state.alive and state.running:
+            try:
+                raw = input("\n[DEAD]> ").strip()
+                if not raw: continue
+                if raw.lower() in ("quit", "q", "exit"): break
+                if any(raw.lower().startswith(c) for c in ["newgame", "log", "save"]):
+                    result = execute_command(state, raw)
+                    if result and handle_special_result(result, state, console):
+                        if state.alive: break # Re-entered game via newgame
+                    if result:
+                        for line in result:
+                            if not line.startswith("__"): console.print(line)
+                else:
+                    console.print("[red]TERMINAL LOCKED.[/] Use `newgame` or `quit`.")
+            except (EOFError, KeyboardInterrupt):
+                break
+
     if state.won:
         console.print("\n[bold green]═══ YOU WIN ═══[/]")
         console.print("[dim]For now. The dark forest is patient.[/]")
-    elif not state.alive:
+    elif not state.alive and not state.running:
         console.print("\n[bold red]═══ GAME OVER ═══[/]")
         console.print("[dim]The chain remembers.[/]")
