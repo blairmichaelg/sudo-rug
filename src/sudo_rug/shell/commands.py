@@ -10,7 +10,6 @@ from sudo_rug.sim.token_factory import deploy_meme_token
 from sudo_rug.sim.market import execute_buy, execute_sell, pull_liquidity
 from sudo_rug.sim.bots import create_bot_job
 from sudo_rug.sim.heat import add_heat, get_heat_bar, check_heat_lockdown
-from sudo_rug.sim.opsec import get_opsec_rating
 from sudo_rug.shell.helptext import HELP_OVERVIEW, HELP_DETAILS
 
 
@@ -30,7 +29,7 @@ def cmd_help(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
             "$": "wallet",
             "w": "wait",
             "b": "buy",
-            "s": "sell" # and s_alias
+            "s": "sell"
         }
         key = alias_map.get(key, key)
         
@@ -182,7 +181,7 @@ def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> 
     ]
     if penalty > 0:
         res_lines.append(f"  {lock_msg}")
-    res_lines.append(f"  Next: seed the pool with [cyan]seed {result.ticker}/USD -u <N} -n <N>[/]")
+    res_lines.append(f"  Next: seed the pool with [cyan]seed {result.ticker}/USD -u <N> -n <N>[/]")
     return res_lines
 
 
@@ -628,55 +627,6 @@ def cmd_quit(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
     return ["[dim]Disconnecting...[/]"]
 
 
-def cmd_opsec_upgrade(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
-    """Upgrade OpSec."""
-    from sudo_rug.sim.heat import check_heat_lockdown
-    allowed, _, lock_msg = check_heat_lockdown(state, ActionType.OPSEC_UPGRADE)
-    if not allowed:
-        return [lock_msg]
-
-    tier_str = flags.get("tier") or flags.get("L")
-    if not tier_str:
-        return ["[red]Missing -L / --tier[/]. Usage: upgrade --tier <1|2|3>"]
-    
-    try:
-        target_tier = int(tier_str)
-    except ValueError:
-        return ["[red]Tier must be 1, 2, or 3.[/]"]
-        
-    if target_tier <= state.opsec_tier:
-        return [f"[red]You already have OpSec tier {state.opsec_tier}.[/]"]
-    if target_tier != state.opsec_tier + 1:
-        return [f"[red]Must purchase tiers in order. Current tier {state.opsec_tier}. Next is {state.opsec_tier + 1}.[/]"]
-        
-    costs = {1: 500.0, 2: 2000.0, 3: 8000.0}
-    if target_tier not in costs:
-        return ["[red]Unknown tier. Tiers are 1, 2, 3.[/]"]
-        
-    cost = costs[target_tier]
-    if not state.wallet.debit("USD", cost):
-        return [f"[red]Insufficient USD (have ${state.wallet.get('USD'):,.2f}, need ${cost:,.2f})[/]"]
-        
-    state.opsec_tier = target_tier
-    if target_tier == 1:
-        state.opsec = 0.20
-        state.config.heat_decay_per_block += 0.1
-        desc = "burner wallet"
-    elif target_tier == 2:
-        state.opsec = 0.40
-        state.config.heat_decay_per_block += 0.2
-        desc = "VPN + mixer"
-    else:
-        state.opsec = 0.65
-        state.config.heat_decay_per_block += 0.3
-        desc = "full dark stack"
-        
-    return [
-        f"[green]✓[/] OpSec upgraded to Tier {target_tier}: {desc}",
-        f"  Cost: ${cost:,.2f}",
-        f"  Protection: {state.opsec*100:.0f}%",
-        f"  Heat Decay: {state.config.heat_decay_per_block:.1f}/block",
-    ]
 
 
 def cmd_save(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
@@ -751,8 +701,6 @@ COMMANDS: dict[str, CommandHandler] = {
     "/": cmd_logs,
     "risk": cmd_risk,
     "!": cmd_risk,
-    "upgrade": cmd_opsec_upgrade,
-    "opsec_upgrade": cmd_opsec_upgrade,
     "save": cmd_save,
     "load": cmd_load,
     "newgame": cmd_newgame,

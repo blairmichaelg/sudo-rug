@@ -29,7 +29,6 @@ TIME
   wait N (w)              Advance N blocks.
 
 META
-  upgrade -L N            Level up OpSec.
   save / load / newgame / quit
 
 Type `help <cmd>` for flags and an example."""
