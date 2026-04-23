@@ -346,11 +346,12 @@ def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> l
         f"for ${result.amount_out:.2f} (price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f})",
     )
 
+    fee_usd = result.amount_out * (state.config.trade_fee / (1 - state.config.trade_fee))
     res = [
         f"[green]✓[/] Sold [bold]{amount:,.2f}[/] tokens",
         f"  Received: [green]${result.amount_out:,.2f}[/]",
         f"  Price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f}",
-        f"  Fee: ${result.fee_paid:.4f}",
+        f"  Fee: ${fee_usd:.4f}",
         f"  Heat +{heat_added:.1f}",
     ]
     if penalty > 0:
