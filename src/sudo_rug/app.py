@@ -141,10 +141,11 @@ def run_app(state: GameState):
                     wait_blocks = int(line.replace("__WAIT__", ""))
             console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Advancing {wait_blocks} blocks...")
 
+        before_idx = last_idx
         for _ in range(tick_count):
             _tick(state)
             
-        last_idx = _print_new_logs(state, console, last_idx)
+        last_idx = _print_new_logs(state, console, before_idx)
         
         if is_wait:
             console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Done.")
