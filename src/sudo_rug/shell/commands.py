@@ -36,76 +36,97 @@ def cmd_help(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
 def cmd_status(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Show game status."""
     nw = state.net_worth()
-    tier_info = ""
-    if state.opsec_tier == 0:
-        tier_info = " (Tier 1: $500)"
-    elif state.opsec_tier == 1:
-        tier_info = " (Tier 2: $2,000)"
-    elif state.opsec_tier == 2:
-        tier_info = " (Tier 3: $8,000)"
-    else:
-        tier_info = " (MAX)"
+    liquid_usd = state.wallet.get("USD")
+    pnl = nw - state.config.start_capital
+    pnl_str = f"+${pnl:,.2f}" if pnl >= 0 else f"-${abs(pnl):,.2f}"
 
-    lines = [
-        f"[bold cyan]═══ STATUS ═══[/]",
-        f"  Block:     [white]#{state.clock_block}[/]",
-        f"  Phase:     [magenta]{state.phase.name}[/]",
-        f"  Net Worth: [{'green' if nw >= state.config.win_target * 0.5 else 'white'}]${nw:,.2f}[/]"
-        f"  (target: ${state.config.win_target:,.0f})",
-        f"  Heat:      {get_heat_bar(state.heat.level)}",
-        f"  OpSec:     {get_opsec_rating(state)}{tier_info}",
-        f"  USD:       [green]${state.wallet.get('USD'):,.2f}[/]",
-    ]
+    heat_lab = ""
+    if state.heat.level < 30: heat_lab = "[Normal]"
+    elif state.heat.level < 60: heat_lab = "[Elevated]"
+    elif state.heat.level < 80: heat_lab = "[High]"
+    elif state.heat.level < 100: heat_lab = "[Critical]"
+    else: heat_lab = "[BURNED]"
 
-    # Token holdings
+    if state.opsec < 0.20: opsec_desc = "Tier 0 — No cover"
+    elif state.opsec < 0.40: opsec_desc = "Tier 1 — Basic proxy"
+    elif state.opsec < 0.60: opsec_desc = "Tier 2 — VPN + mixer"
+    elif state.opsec < 0.80: opsec_desc = "Tier 3 — Layered infra"
+    else: opsec_desc = "Tier 4 — Dark node"
+
+    active_bots = sum(1 for b in state.bots if b.blocks_remaining > 0)
+    
+    # Calculate top bag
+    top_ticker = None
+    top_pct = 0.0
     for ticker in state.tokens:
         held = state.wallet.get(ticker)
         pool_key = f"{ticker}/USD"
         if pool_key in state.pools:
             price = state.pools[pool_key].price
-            value = held * price
-            lines.append(
-                f"  {ticker}:    {held:,.2f} "
-                f"(${price:.6f}/ea = ${value:,.2f})"
-            )
-        else:
-            lines.append(f"  {ticker}:    {held:,.2f} (no pool)")
+            val = held * price
+            if nw > 0 and (val / nw) > top_pct:
+                top_pct = val / nw
+                top_ticker = ticker
+    
+    top_bag_str = f"{top_ticker} — {top_pct*100:.0f}% of net worth" if top_ticker else "None"
 
-    # Active pools
-    if state.pools:
-        lines.append(f"\n[bold]Pools:[/]")
-        for key, pool in state.pools.items():
-            if pool.reserve_base > 0:
-                lines.append(
-                    f"  {key}: {pool.reserve_token:,.2f} / "
-                    f"${pool.reserve_base:,.2f} "
-                    f"(price: ${pool.price:.6f})"
-                )
-            else:
-                lines.append(f"  {key}: [dim]drained[/]")
-
-    # Active bots
-    if state.bots:
-        lines.append(f"\n[bold]Active Bots:[/] {len(state.bots)}")
-        for i, bot in enumerate(state.bots):
-            lines.append(
-                f"  bot#{i}: {bot.market} — "
-                f"${bot.budget_remaining:,.2f} remaining, "
-                f"{bot.blocks_remaining} blocks left"
-            )
-
-    return lines
+    return [
+        "══════════════════════ STATUS ══════════════════════",
+        f"Block:       #{state.clock_block:04d}          Phase: {state.phase.name}",
+        f"Net worth:   ${nw:,.2f}     Target: ${state.config.win_target:,.2f}",
+        f"Liquid USD:  ${liquid_usd:,.2f}     PnL:    {pnl_str}",
+        "────────────────────────────────────────────────────",
+        f"Heat:        {get_heat_bar(state.heat.level)}    {state.heat.level:.1f}  {heat_lab}",
+        f"OpSec:       {opsec_desc}  (mod: {state.opsec:.2f})",
+        "────────────────────────────────────────────────────",
+        f"Bots:        {active_bots} active",
+        f"Top bag:     {top_bag_str}",
+        "════════════════════════════════════════════════════"
+    ]
 
 
 def cmd_wallet(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Show wallet balances."""
-    lines = ["[bold cyan]═══ WALLET ═══[/]"]
+    lines = ["═══════════════════════ WALLET ═══════════════════════"]
+    usd = state.wallet.get("USD")
+    lines.append(f"USD           ${usd:,.2f}")
+    
+    has_tokens = False
     for currency, amount in sorted(state.wallet.balances.items()):
-        if amount > 0 or currency == "USD":
-            if currency == "USD":
-                lines.append(f"  [green]${amount:,.2f}[/] USD")
+        if amount > 0 and currency != "USD":
+            has_tokens = True
+            pool_key = f"{currency}/USD"
+            if pool_key in state.pools:
+                price = state.pools[pool_key].price
+                val = amount * price
+                lines.append(f"{currency:<13} {amount:,.0f}   ≈ ${val:,.2f}  (@${price:.6f})")
             else:
-                lines.append(f"  [white]{amount:,.2f}[/] {currency}")
+                lines.append(f"{currency:<13} {amount:,.0f}   (no pool)")
+                
+    if not has_tokens:
+        lines.append("No token holdings.")
+
+    nw = state.net_worth()
+    top_ticker = None
+    top_pct = 0.0
+    for ticker in state.tokens:
+        held = state.wallet.get(ticker)
+        val = 0.0
+        pool_key = f"{ticker}/USD"
+        if pool_key in state.pools:
+            val = held * state.pools[pool_key].price
+        if nw > 0 and (val / nw) > top_pct:
+            top_pct = val / nw
+            top_ticker = ticker
+            
+    top_bag_str = f"{top_ticker}  ({top_pct*100:.0f}% of net worth)" if top_ticker else "None"
+    
+    lines.extend([
+        "──────────────────────────────────────────────────────",
+        f"Net worth:    ${nw:,.2f}",
+        f"Largest bag:  {top_bag_str}",
+        "══════════════════════════════════════════════════════"
+    ])
     return lines
 
 
@@ -139,7 +160,7 @@ def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> 
         heat_added += penalty
 
     state.add_log(
-        f"TOKEN DEPLOYED: ${result.ticker} — supply: {result.total_supply:,.0f}",
+        f"[SYS] TOKEN DEPLOYED: {result.ticker} — supply: {result.total_supply:,.0f}",
         style="bold magenta"
     )
     res_lines = [
@@ -207,7 +228,7 @@ def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> 
 
     initial_price = pool.price
     state.add_log(
-        f"POOL CREATED: {market_key} — "
+        f"[MKT] POOL CREATED: {market_key} — "
         f"${base_amount:,.2f} / {token_amount:,.0f} {ticker} "
         f"(price: ${initial_price:.6f})",
         style="bold blue"
@@ -254,7 +275,7 @@ def cmd_trade_buy(state: GameState, pos: list[str], flags: dict[str, str]) -> li
         heat_added += penalty
 
     state.add_log(
-        f"BUY: {result.amount_out:.2f} tokens on {market} "
+        f"[MKT] BUY: {result.amount_out:.2f} tokens on {market} "
         f"for ${amount:.2f} (price: ${result.price_before:.6f} [green]▲[/] ${result.price_after:.6f})",
     )
 
@@ -300,7 +321,7 @@ def cmd_trade_sell(state: GameState, pos: list[str], flags: dict[str, str]) -> l
         heat_added += penalty
 
     state.add_log(
-        f"SELL: {amount:.2f} tokens on {market} "
+        f"[MKT] SELL: {amount:.2f} tokens on {market} "
         f"for ${result.amount_out:.2f} (price: ${result.price_before:.6f} [red]▼[/] ${result.price_after:.6f})",
     )
 
@@ -355,7 +376,7 @@ def cmd_bots_run(state: GameState, pos: list[str], flags: dict[str, str]) -> lis
 
     heat_added = add_heat(state, ActionType.RUN_BOTS)
     state.add_log(
-        f"BOTS HIRED: ${budget:.2f} budget, {duration} blocks on {market_key}",
+        f"[BOT] BOTS HIRED: ${budget:.2f} budget, {duration} blocks on {market_key}",
         style="bold yellow"
     )
 
@@ -391,7 +412,7 @@ def cmd_liquidity_pull(state: GameState, pos: list[str], flags: dict[str, str]) 
         heat_added += penalty
 
     state.add_log(
-        f"⚠ LIQUIDITY PULLED: {market} — "
+        f"[MKT] ⚠ LIQUIDITY PULLED: {market} — "
         f"${base_out:,.2f} + {token_out:,.0f} tokens recovered. "
         f"Heat +{heat_added:.1f}",
         style="bold red"
@@ -431,9 +452,59 @@ def cmd_logs(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
     lines = ["[bold cyan]═══ RECENT LOGS ═══[/]"]
     for entry in entries:
         if entry.style:
-            lines.append(f"  [dim]#{entry.block:>4}[/] [{entry.style}]{entry.message}[/]")
+            lines.append(f"  [dim]#{entry.block:04d}[/] [{entry.style}]{entry.message}[/]")
         else:
-            lines.append(f"  [dim]#{entry.block:>4}[/] {entry.message}")
+            lines.append(f"  [dim]#{entry.block:04d}[/] {entry.message}")
+    return lines
+
+def cmd_positions(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Show all pool exposures."""
+    lines = ["═════════════════════ POSITIONS ═════════════════════"]
+    nw = state.net_worth()
+    if nw == 0: nw = 1
+    
+    for ticker in state.tokens:
+        held = state.wallet.get(ticker)
+        pool_key = f"{ticker}/USD"
+        if pool_key in state.pools and held > 0:
+            price = state.pools[pool_key].price
+            val = held * price
+            pct = (val / nw) * 100
+            lines.append(f"{ticker:<10} ${val:,.2f} ({pct:.1f}% of net worth)")
+            
+    if len(lines) == 1:
+        lines.append("No active pool positions.")
+    return lines
+
+def cmd_risk(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """Show risk breakdown."""
+    heat_lab = "Normal"
+    if state.heat.level >= 80: heat_lab = "Critical"
+    elif state.heat.level >= 60: heat_lab = "High"
+    elif state.heat.level >= 30: heat_lab = "Elevated"
+    
+    lines = [
+        "═══════════════════════ RISK ════════════════════════",
+        f"Heat:  {state.heat.level:.1f}/100 [{heat_lab}]",
+        f"OpSec: {state.opsec*100:.0f}% Protection",
+        "─────────────────────────────────────────────────────"
+    ]
+    if state.heat.level >= 80:
+        lines.append("[red]⚠ CRITICAL HEAT. BOTS LOCKED. TRADES PENALIZED Heavily.[/]")
+    elif state.heat.level >= 50:
+        lines.append("[yellow]⚠ HIGH HEAT. Tracing imminent. Trades penalized.[/]")
+    else:
+        lines.append("[green]✓ Heat acceptable. Operating normally.[/]")
+    return lines
+
+def cmd_bots_list(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
+    """List active bots."""
+    lines = ["═══════════════════════ BOTS ════════════════════════"]
+    if not state.bots:
+        lines.append("No active bots.")
+    else:
+        for i, bot in enumerate(state.bots):
+            lines.append(f"Bot #{i:02d} | Market: {bot.market:<10} | Budget: ${bot.budget_remaining:,.2f} | Blocks: {bot.blocks_remaining}")
     return lines
 
 
@@ -537,15 +608,28 @@ def cmd_newgame(state: GameState, pos: list[str], flags: dict[str, str]) -> list
 COMMANDS: dict[str, CommandHandler] = {
     "help": cmd_help,
     "status": cmd_status,
+    "s": cmd_status,
     "wallet": cmd_wallet,
-    "deploy_meme": cmd_deploy_meme,
+    "w": cmd_wallet,
+    "positions": cmd_positions,
+    "pos": cmd_positions,
+    "token_deploy": cmd_deploy_meme,
+    "deploy": cmd_deploy_meme,
     "pool_create": cmd_pool_create,
     "trade_buy": cmd_trade_buy,
+    "buy": cmd_trade_buy,
     "trade_sell": cmd_trade_sell,
-    "bots_run": cmd_bots_run,
+    "sell": cmd_trade_sell,
+    "bots_hire": cmd_bots_run,
+    "bots_list": cmd_bots_list,
     "liquidity_pull": cmd_liquidity_pull,
+    "pool_drain": cmd_liquidity_pull,
+    "rug": cmd_liquidity_pull,
     "wait": cmd_wait,
-    "logs": cmd_logs,
+    "log": cmd_logs,
+    "l": cmd_logs,
+    "risk": cmd_risk,
+    "r": cmd_risk,
     "opsec_upgrade": cmd_opsec_upgrade,
     "save": cmd_save,
     "load": cmd_load,

@@ -1,241 +1,63 @@
-"""Help text and command documentation."""
+"""Command help texts."""
 
-from __future__ import annotations
+HELP_OVERVIEW = """sudo-rug v1 — dark-forest terminal sim
 
-HELP_OVERVIEW = """\
-[bold cyan]liquidate.exe[/] v0.1 — sudo_rug terminal
+INFO
+  help [cmd]     Show commands or detail for a command.
+  status (s)     Block, net worth, heat, opsec at a glance.
+  log (l)        Last 20 system events.
+  risk (r)       Current heat/opsec breakdown and consequences.
 
-[bold]COMMANDS[/]
-  [green]help[/]              Show this help (or help <command>)
-  [green]status[/]            Show game state overview
-  [green]wallet[/]            Show wallet balances
-  [green]deploy meme[/]       Deploy a meme token
-  [green]pool create[/]       Create a liquidity pool
-  [green]trade buy[/]         Buy tokens with USD
-  [green]trade sell[/]        Sell tokens for USD
-  [green]bots run[/]          Hire bots to generate volume
-  [green]liquidity pull[/]    Pull all liquidity (rug)
-  [green]opsec upgrade[/]     Upgrade OpSec tier
-  [green]save[/]              Save current game
-  [green]load[/]              Load saved game
-  [green]newgame[/]           Start a new game
-  [green]wait[/]              Skip blocks
-  [green]logs[/]              Show recent log entries
-  [green]quit[/]              Exit the game
+ACCOUNTS
+  wallet (w)     Balances and exposures.
+  positions      All pool exposures as % of net worth.
 
-Type [cyan]help <command>[/] for details on a specific command.
-"""
+TOKENS & POOLS
+  token deploy   Launch a new meme token.
+  pool create    Seed a token/USD pool.
+  pool drain     Pull your liquidity (rug).
 
-HELP_DETAILS: dict[str, str] = {
-    "deploy_meme": """\
-[bold]deploy meme[/] — Deploy a new meme token
+TRADING
+  trade buy      Buy tokens from a pool.
+  trade sell     Sell tokens into a pool.
 
-[bold]Usage:[/]
-  deploy meme --ticker <TICKER> --supply <N>
+BOTS
+  bots hire      Deploy hype bots on a pool.
+  bots list      Show active bots and budgets.
 
-[bold]Options:[/]
-  --ticker    Token ticker symbol (2–8 chars, e.g. REKT)
-  --supply    Total token supply (e.g. 1000000)
+TIME
+  wait N         Advance N blocks.
 
-[bold]Effects:[/]
-  - Creates the token and credits your wallet with full supply
-  - Adds [yellow]+5 heat[/]
-  - You can then create a pool to start trading
+META
+  save / load / newgame / quit
 
-[bold]Example:[/]
-  deploy meme --ticker REKT --supply 1000000
-""",
+Type `help <cmd>` for flags and an example."""
 
-    "pool_create": """\
-[bold]pool create[/] — Create a constant-product liquidity pool
-
-[bold]Usage:[/]
-  pool create --token <TICKER> --base-amount <N> --token-amount <N>
-
-[bold]Options:[/]
-  --token         Token ticker to pair with USD
-  --base-amount   USD to seed the pool with
-  --token-amount  Tokens to seed the pool with
-
-[bold]Effects:[/]
-  - Creates a TICKER/USD pool
-  - Deducts tokens and USD from your wallet
-  - Initial price = base-amount / token-amount
-  - Adds [yellow]+2 heat[/]
-
-[bold]Example:[/]
-  pool create --token REKT --base-amount 500 --token-amount 500000
-""",
-
-    "trade_buy": """\
-[bold]trade buy[/] — Buy tokens with USD
-
-[bold]Usage:[/]
-  trade buy --market <TICKER>/USD --amount <N>
-
-[bold]Options:[/]
-  --market   Market pair (e.g. REKT/USD)
-  --amount   USD to spend
-
-[bold]Effects:[/]
-  - Swaps USD for tokens via the AMM
-  - 0.3% trade fee
-  - Slippage depends on pool depth
-  - Adds [yellow]+1 heat[/]
-
-[bold]Example:[/]
-  trade buy --market REKT/USD --amount 100
-""",
-
-    "trade_sell": """\
-[bold]trade sell[/] — Sell tokens for USD
-
-[bold]Usage:[/]
-  trade sell --market <TICKER>/USD --amount <N>
-
-[bold]Options:[/]
-  --market   Market pair (e.g. REKT/USD)
-  --amount   Token amount to sell
-
-[bold]Effects:[/]
-  - Swaps tokens for USD via the AMM
-  - 0.3% trade fee
-  - Slippage depends on pool depth
-  - Adds [yellow]+1 heat[/]
-
-[bold]Example:[/]
-  trade sell --market REKT/USD --amount 50000
-""",
-
-    "bots_run": """\
-[bold]bots run[/] — Hire bots to generate volume
-
-[bold]Usage:[/]
-  bots run --budget <N> --duration <N>
-
-[bold]Options:[/]
-  --budget     USD to allocate to bots
-  --duration   Number of blocks bots will trade for
-  --market     (Optional) Market pair to target (e.g. REKT/USD)
-
-[bold]Effects:[/]
-  - Deducts budget from your wallet
-  - Bots make small buys each block, pumping price
-  - You need at least one pool active
-  - Adds [yellow]+3 heat[/]
-
-[bold]Notes:[/]
-  Bot activity is real — it uses the AMM, so prices actually move.
-  Requires at least one active pool.
-
-[bold]Example:[/]
-  bots run --budget 200 --duration 10
-""",
-
-    "liquidity_pull": """\
-[bold]liquidity pull[/] — Pull all liquidity from a pool (rug)
-
-[bold]Usage:[/]
-  liquidity pull --market <TICKER>/USD
-
-[bold]Options:[/]
-  --market   Market pair to drain
-
-[bold]Effects:[/]
-  - Removes ALL liquidity from the pool
-  - Credits your wallet with the base + token reserves
-  - Pool becomes empty (no more trading)
-  - Adds [red]+30 heat[/] ⚠
-
-[bold]Example:[/]
-  liquidity pull --market REKT/USD
-""",
-
-    "wait": """\
-[bold]wait[/] — Skip forward N blocks
-
-[bold]Usage:[/]
-  wait --blocks <N>
-
-[bold]Options:[/]
-  --blocks   Number of blocks to advance (default: 1)
-
-[bold]Effects:[/]
-  - Time passes, bots trade, heat decays
-  - Events may trigger
-
-[bold]Example:[/]
-  wait --blocks 5
-""",
-
-    "status": """\
-[bold]status[/] — Show current game state overview
-
-Shows capital, holdings, heat, OpSec, net worth, active bots, and win/lose targets.
-""",
-
-    "wallet": """\
-[bold]wallet[/] — Show wallet balances
-
-Lists all currencies and their amounts.
-""",
-
-    "logs": """\
-[bold]logs[/] — Show recent event log entries
-
-Displays the last 20 log entries with block timestamps.
-""",
-
-    "opsec_upgrade": """\
-[bold]opsec upgrade[/] — Upgrade your operational security
-
-[bold]Usage:[/]
-  opsec upgrade --tier <N>
-
-[bold]Options:[/]
-  --tier     Tier to purchase (1, 2, or 3)
-
-[bold]Effects:[/]
-  - Pays USD to permanently drop heat gain multiplier
-  - Permanently increases heat decay per block
-  - Must be purchased in order!
-""",
-
-    "save": """\
-[bold]save[/] — Save current game
-
-Saves progress to ~/.sudo_rug/save.json.
-Autosave happens every 50 blocks.
-""",
-
-    "load": """\
-[bold]load[/] — Load saved game
-
-Loads progress from ~/.sudo_rug/save.json.
-Replaces current run.
-""",
-
-    "newgame": """\
-[bold]newgame[/] — Start a new game
-
-[bold]Usage:[/]
-  newgame          (Warns and asks for confirmation)
-  newgame confirm  (Actually executes reset)
-
-Deletes current save and restarts fresh.
-""",
-
-    "help": """\
-[bold]help[/] — Show help
-
-[bold]Usage:[/]
-  help            Show all commands
-  help <command>  Show details for a command
-""",
-
-    "quit": """\
-[bold]quit[/] — Exit the game
-
-No save. No mercy.
-""",
+HELP_DETAILS = {
+    "status": "status\n\nShow block, net worth, heat, opsec at a glance.\nExample: status\n[dim]The chain is public, but your identity is not.[/]",
+    "s": "Alias for status.",
+    "wallet": "wallet\n\nShow USD and token balances.\nExample: wallet\n[dim]Your bags, transparent for all to see.[/]",
+    "w": "Alias for wallet.",
+    "log": "log\n\nShow the last 20 system events.\nExample: log\n[dim]The dark forest chatters.[/]",
+    "l": "Alias for log.",
+    "risk": "risk\n\nShow current heat, opsec tiers, and consequences.\nExample: risk\n[dim]Assess how close they are to finding you.[/]",
+    "r": "Alias for risk.",
+    "positions": "positions\n\nShow all pool exposures as a % of your net worth.\nExample: positions\n[dim]Know your systemic risk.[/]",
+    "pos": "Alias for positions.",
+    "token_deploy": "token deploy\n\nLaunch a new meme token.\nFlags: --ticker <str> --supply <float>\nExample: token deploy --ticker REKT --supply 1000000\n[dim]Create a new shitcoin out of thin air.[/]",
+    "deploy": "Alias for token deploy.",
+    "pool_create": "pool create\n\nSeed a token/USD pool.\nFlags: --token <str> --base-amount <float> --token-amount <float>\nExample: pool create --token REKT --base-amount 500 --token-amount 500000\n[dim]Provide liquidity to the AMM so plebs can buy.[/]",
+    "pool_drain": "pool drain\n\nPull your liquidity (rug).\nFlags: --market <str>\nExample: pool drain --market REKT/USD\n[dim]Yank the liquidity and run. High heat generation.[/]",
+    "rug": "Alias for pool drain.",
+    "trade_buy": "trade buy\n\nBuy tokens from a pool.\nFlags: --market <str> --amount <float (USD)>\nExample: trade buy --market REKT/USD --amount 100\n[dim]Ape in with USD.[/]",
+    "buy": "Alias for trade buy.",
+    "trade_sell": "trade sell\n\nSell tokens into a pool.\nFlags: --market <str> --amount <float (tokens)>\nExample: trade sell --market REKT/USD --amount 5000\n[dim]Dump your bags on the market.[/]",
+    "sell": "Alias for trade sell.",
+    "bots_hire": "bots hire\n\nDeploy hype bots on a pool.\nFlags: --budget <float> --duration <int blocks> [--market <str>]\nExample: bots hire --budget 200 --duration 10\n[dim]Pay for CT volume and fake hype to bait buyers.[/]",
+    "bots_list": "bots list\n\nShow active bots and budgets.\nExample: bots list\n[dim]Track your deployed mercenaries.[/]",
+    "wait": "wait N\n\nAdvance N blocks.\nExample: wait 10\n[dim]Let the simulation advance while you plan your next move.[/]",
+    "save": "save\n\nSave your progress to ~/.sudo_rug/save.json.\nExample: save\n[dim]Snapshot your wallet state offline.[/]",
+    "load": "load\n\nLoad progress from ~/.sudo_rug/save.json.\nExample: load\n[dim]Restore your snapshot.[/]",
+    "newgame": "newgame\n\nStart a new run.\nExample: newgame confirm\n[dim]Burn it all down and start over.[/]",
+    "quit": "quit\n\nDisconnect from the simulation.\nExample: quit\n[dim]Go dark.[/]"
 }
