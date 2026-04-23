@@ -14,7 +14,7 @@ ACCOUNTS
 
 TOKENS & POOLS
   launch -t X -s N        Deploy a meme token.
-  seed X/USD -b N -t N    Seed a liquidity pool.
+  seed X/USD -u N -n N    Seed a liquidity pool.
   rug X/USD               Pull liquidity (exit scam).
 
 TRADING
@@ -29,6 +29,7 @@ TIME
   wait N (w)              Advance N blocks.
 
 META
+  upgrade -L N            Level up OpSec.
   save / load / newgame / quit
 
 Type `help <cmd>` for flags and an example."""
@@ -40,7 +41,7 @@ HELP_DETAILS = {
     "risk": "risk (!)\n\nShow current heat, opsec tiers, and consequences.\nExample: !\n[dim]Assess how close they are to finding you.[/]",
     "pos": "pos\n\nShow all pool exposures as a % of your net worth.\nExample: pos\n[dim]Know your systemic risk.[/]",
     "launch": "launch\n\nDeploy a meme token.\nFlags: -t / --ticker <str>, -s / --supply <float>\nExample: launch -t REKT -s 1000000\n[dim]Create a new shitcoin out of thin air.[/]",
-    "seed": "seed\n\nSeed a liquidity pool.\nFlags: -b / --base-amount <float>, -t / --token-amount <float>\nExample: seed REKT/USD -b 500 -t 500000\n[dim]Provide liquidity to the AMM so plebs can buy.[/]",
+    "seed": "seed\n\nSeed a liquidity pool.\nFlags: -u / --base-amount <float>, -n / --token-amount <float>\nExample: seed REKT/USD -u 500 -n 500000\n[dim]Provide liquidity to the AMM so plebs can buy.[/]",
     "rug": "rug\n\nPull liquidity (exit scam).\nExample: rug REKT/USD\n[dim]Yank the liquidity and run. High heat generation.[/]",
     "buy": "buy (b)\n\nBuy tokens from a pool.\nFlags: -m / --market <str>, -a / --amount <float (USD)>\nExample: buy -m REKT/USD -a 100\n[dim]Ape in with USD.[/]",
     "sell": "sell (s)\n\nSell tokens into a pool.\nFlags: -m / --market <str>, -a / --amount <float (tokens)>\nExample: sell -m REKT/USD -a 5000\n[dim]Dump your bags on the market.[/]",

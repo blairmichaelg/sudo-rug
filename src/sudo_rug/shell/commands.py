@@ -182,25 +182,25 @@ def cmd_deploy_meme(state: GameState, pos: list[str], flags: dict[str, str]) -> 
     ]
     if penalty > 0:
         res_lines.append(f"  {lock_msg}")
-    res_lines.append(f"  Next: seed the pool with [cyan]seed {result.ticker}/USD -b <N> -t <N>[/]")
+    res_lines.append(f"  Next: seed the pool with [cyan]seed {result.ticker}/USD -u <N} -n <N>[/]")
     return res_lines
 
 
 def cmd_pool_create(state: GameState, pos: list[str], flags: dict[str, str]) -> list[str]:
     """Create a liquidity pool."""
     ticker = (flags.get("token") or flags.get("t") or "").upper()
-    base_str = flags.get("base_amount") or flags.get("b")
-    token_str = flags.get("token_amount") or flags.get("t") # Overlapping but resolved below
+    base_str = flags.get("base_amount") or flags.get("u")
+    token_str = flags.get("token_amount") or flags.get("n")
 
     if not ticker and pos:
         ticker = pos[0].split("/")[0].upper()
 
     if not ticker:
-        return ["[red]Missing -t / --token[/]. Usage: seed REKT/USD -b 500 -t 500000"]
+        return ["[red]Missing ticker[/]. Usage: seed REKT/USD -u 500 -n 5000000"]
     if not base_str:
-        return ["[red]Missing -b / --base-amount[/]"]
+        return ["[red]Missing -u / --base-amount[/]"]
     if not token_str:
-        return ["[red]Missing -t / --token-amount[/]"]
+        return ["[red]Missing -n / --token-amount[/]"]
 
     try:
         base_amount = float(base_str)
@@ -635,9 +635,9 @@ def cmd_opsec_upgrade(state: GameState, pos: list[str], flags: dict[str, str]) -
     if not allowed:
         return [lock_msg]
 
-    tier_str = flags.get("tier")
+    tier_str = flags.get("tier") or flags.get("L")
     if not tier_str:
-        return ["[red]Missing --tier[/]. Usage: opsec upgrade --tier <1|2|3>"]
+        return ["[red]Missing -L / --tier[/]. Usage: upgrade --tier <1|2|3>"]
     
     try:
         target_tier = int(tier_str)
@@ -751,6 +751,7 @@ COMMANDS: dict[str, CommandHandler] = {
     "/": cmd_logs,
     "risk": cmd_risk,
     "!": cmd_risk,
+    "upgrade": cmd_opsec_upgrade,
     "opsec_upgrade": cmd_opsec_upgrade,
     "save": cmd_save,
     "load": cmd_load,
