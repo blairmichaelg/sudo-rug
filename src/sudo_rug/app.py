@@ -22,6 +22,12 @@ def _tick(state: GameState):
         state.add_log("[dim][SYS] Autosaved.[/]")
 
     decay_heat(state)
+    # Post-rug heat decay
+    if state.heat.rug_heat > 0:
+        actual_rug_decay = min(0.5, state.heat.rug_heat)
+        state.heat.rug_heat -= actual_rug_decay
+        state.heat.level = max(0.0, state.heat.level - actual_rug_decay)
+
     bot_messages = tick_bots(state)
     for msg in bot_messages:
         state.add_log(msg)
@@ -141,8 +147,12 @@ def run_app(state: GameState):
             console.print(f"[WAIT] [dim]#{state.clock_block:04d}[/] Advancing {wait_blocks} blocks...")
 
         before_idx = last_idx
-        for _ in range(tick_count):
-            _tick(state)
+        if is_wait:
+            for _ in range(wait_blocks):
+                _tick(state)
+        else:
+            for _ in range(tick_count):
+                _tick(state)
             
         last_idx = _print_new_logs(state, console, before_idx)
         

@@ -35,6 +35,7 @@ class Pool:
     base: str         # base currency (USD)
     reserve_token: float = 0.0
     reserve_base: float = 0.0
+    sniper_positions: dict[str, float] = field(default_factory=dict) # ticker -> amount
 
     @property
     def k(self) -> float:
@@ -59,6 +60,7 @@ class BotJob:
     blocks_remaining: int
     blocks_total: int
     market: str  # market key e.g. "REKT/USD"
+    sniper_hold: int = 0  # blocks to hold before selling
     spend_per_block: float = 0.0
 
     def __post_init__(self):
@@ -101,6 +103,7 @@ class HeatState:
     warned_25: bool = False
     warned_50: bool = False
     warned_75: bool = False
+    rug_heat: float = 0.0  # Heat accumulated from rugs specifically
 
 
 @dataclass
@@ -143,6 +146,10 @@ class GameState:
         for pool in self.pools.values():
             # In sudo-rug v1, the player is effectively the only LP
             total += pool.reserve_base
+            
+        # Add value of current bot budgets
+        for bot in self.bots:
+            total += bot.budget_remaining
             
         return total
 

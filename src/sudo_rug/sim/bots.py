@@ -42,6 +42,13 @@ def tick_bots(state: GameState) -> list[str]:
     finished = []
 
     for i, bot in enumerate(state.bots):
+        # Sniper bot in hold mode (budget depleted but blocks remaining for hold)
+        if bot.budget_remaining < 0.01 and bot.blocks_remaining > 0:
+            bot.blocks_remaining -= 1
+            if bot.blocks_remaining <= 0:
+                finished.append(i)
+            continue
+
         if bot.blocks_remaining <= 0 or bot.budget_remaining <= 0:
             finished.append(i)
             continue
@@ -72,26 +79,48 @@ def tick_bots(state: GameState) -> list[str]:
         )
 
         if bot.blocks_remaining <= 0 or bot.budget_remaining < 0.01:
-            finished.append(i)
+            # If it's a sniper bot (one-block duration usually), it enters hold mode
+            if bot.blocks_total == 1:
+                bot.blocks_remaining = random.randint(2, 5) # Sniper hold
+                messages.append(f"  bot: job entry complete on {bot.market}. Holding for {bot.blocks_remaining} blocks...")
+            else:
+                finished.append(i)
 
     # Remove finished bots (reverse order to preserve indices)
     for i in sorted(set(finished), reverse=True):
         if i < len(state.bots):
             bot = state.bots.pop(i)
+            if bot.budget_remaining < 0.01 and bot.blocks_total == 1:
+                # Sniper exit!
+                pool = state.pools.get(bot.market)
+                if pool and pool.reserve_token > 0:
+                     # Sell a random 5-20% of the token reserve (simulating sniper exit)
+                    sell_amount = pool.reserve_token * random.uniform(0.05, 0.20)
+                    price_before = pool.price
+                    base_out = sell_amount * pool.price * 0.997
+                    pool.reserve_token += sell_amount
+                    pool.reserve_base = max(0.01, pool.reserve_base - base_out)
+                    price_after = pool.price
+                    
+                    messages.append(
+                        f"  [red]sniper[/]: sold {sell_amount:.2f} on {pool.market_key} "
+                        f"for ${base_out:.2f} (price: ${price_before:.6f} [red]▼[/] ${price_after:.6f})"
+                    )
+            
             messages.append(
                 f"  bot: job completed on {bot.market} "
                 f"(spent ${bot.budget_total - bot.budget_remaining:.2f} "
                 f"of ${bot.budget_total:.2f})"
             )
 
-    # Sniper bot sell pressure (15% chance per block if active pool exists)
+    # Organic sniper bot sell pressure (15% chance per block if active pool exists)
     if random.random() < 0.15:
         # Find active pools
         active_pools = [p for p in state.pools.values() if p.reserve_base > 0]
         if active_pools:
             pool = random.choice(active_pools)
-            # Sell a random 5-20% of the token reserve
-            sell_amount = pool.reserve_token * random.uniform(0.05, 0.20)
+            # Sell a random 5-15% of the token reserve
+            sell_amount = pool.reserve_token * random.uniform(0.05, 0.15)
             price_before = pool.price
             base_out = sell_amount * pool.price * 0.997
             pool.reserve_token += sell_amount

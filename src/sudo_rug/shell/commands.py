@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable, Any
 
 from sudo_rug.core.state import GameState, Pool
-from sudo_rug.core.enums import ActionType
+from sudo_rug.core.enums import ActionType, GamePhase
 from sudo_rug.sim.token_factory import deploy_meme_token
 from sudo_rug.sim.market import execute_buy, execute_sell, pull_liquidity
 from sudo_rug.sim.bots import create_bot_job
@@ -80,11 +80,15 @@ def cmd_status(state: GameState, pos: list[str], flags: dict[str, str]) -> list[
                 top_pct = val / nw
                 top_ticker = ticker
     
-    top_bag_str = f"{top_ticker} — {top_pct*100:.0f}% of net worth" if top_ticker else "None"
+    top_bag_str = f"{top_ticker} — {top_pct*100:.1f}%" if top_ticker else "None"
+    
+    # Phase progress
+    progress = (nw / state.config.win_target) * 100
+    progress_str = f"{progress:,.1f}% to target"
 
     return [
         "══════════════════════ STATUS ══════════════════════",
-        f"Block:       #{state.clock_block:04d}          Phase: {state.phase.name}",
+        f"Block:       #{state.clock_block:04d}          Phase: {state.phase.name} ({progress_str})",
         f"Net worth:   ${nw:,.2f}     Target: ${state.config.win_target:,.2f}",
         f"Liquid USD:  ${liquid_usd:,.2f}     PnL:    {pnl_str}",
         "────────────────────────────────────────────────────",
@@ -113,7 +117,7 @@ def cmd_wallet(state: GameState, pos: list[str], flags: dict[str, str]) -> list[
                 val = amount * price
                 lines.append(f"{currency:<13} {amount:,.0f}   ≈ ${val:,.2f}  (@${price:.6f})")
             else:
-                lines.append(f"{currency:<13} {amount:,.0f}   (no pool)")
+                lines.append(f"{currency:<13} {amount:,.0f}   (no market)")
                 
     if not has_tokens:
         lines.append("No token holdings.")
@@ -610,7 +614,6 @@ def cmd_risk(state: GameState, pos: list[str], flags: dict[str, str]) -> list[st
 
     lines.extend([
         "",
-        "TIP: upgrade opsec to reduce heat impact.",
         "══════════════════════════════════════════════════"
     ])
     return lines
@@ -622,7 +625,7 @@ def cmd_bots_list(state: GameState, pos: list[str], flags: dict[str, str]) -> li
         lines.append("No active bots.")
     else:
         for i, bot in enumerate(state.bots):
-            lines.append(f"Bot #{i:02d} | Market: {bot.market:<10} | Budget: ${bot.budget_remaining:,.2f} | Blocks: {bot.blocks_remaining}")
+            lines.append(f"Bot #{i:02d} | Market: {bot.market:<10} | Budget: ${bot.budget_remaining:,.2f} | Blocks remaining: {bot.blocks_remaining}")
     return lines
 
 
